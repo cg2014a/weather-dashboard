@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <div class="pull-refresh" id="pullRefresh" aria-hidden="true">Release to refresh</div>
     <main class="weather-page" aria-label="SkyStation weather dashboard">
       <section class="weather-shell">
         <p class="app-kicker">
@@ -34,10 +35,17 @@
                 </div>
               </div>
               <p class="condition" id="condition">Loading weather</p>
+              <p class="now-alert" id="nowAlert">Checking nearby weather.</p>
             </div>
             <div class="current-stats" id="currentStats" aria-label="Current condition summary"></div>
           </div>
-          <p class="current-narrative" id="currentNarrative">Weather data is loading.</p>
+          <section class="current-outlook" aria-label="Weather outlook">
+            <img id="outlookIcon" src="icons/weather-cloud.svg" alt="" />
+            <div>
+              <h2>What to expect</h2>
+              <p id="currentNarrative">Weather data is loading.</p>
+            </div>
+          </section>
           <section class="expanded-weather" id="expandedWeather" hidden>
             <section class="quick-grid" id="detailsGrid" aria-label="Weather details"></section>
             <section class="forecast-card hourly-panel" aria-labelledby="hourly-title">
@@ -102,6 +110,17 @@
             </div>
             <iframe class="radar-frame" id="radarFrame" title="Expanded Windy radar centered on selected location" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
           </div>
+        </section>
+
+        <section class="pollen-panel" id="pollenPanel" aria-label="Pollen details" hidden>
+          <div class="radar-heading">
+            <div>
+              <h2>Pollen & Allergens</h2>
+              <p id="pollenSummary">Current allergen levels for the selected location.</p>
+            </div>
+            <button id="pollenClose" type="button" aria-label="Close pollen details">Back</button>
+          </div>
+          <div class="pollen-list" id="pollenList"></div>
         </section>
         <footer class="source-footer">Weather source: NWS · Fallbacks: EPA/AirNow/Open-Meteo · Radar: Windy</footer>
       </section>

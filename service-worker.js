@@ -1,4 +1,4 @@
-const CACHE_NAME = "skystation-v1-15";
+const CACHE_NAME = "skystation-v1-22";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -25,8 +25,10 @@ const APP_SHELL = [
   "./icons/sunrise.svg",
   "./icons/sunset.svg",
   "./icons/aqi.svg",
+  "./icons/pollen.svg",
   "./icons/moon.svg",
-  "./icons/alert.svg"
+  "./icons/alert.svg",
+  "./icons/nav-settings.svg"
 ];
 
 self.addEventListener("install", (event) => {

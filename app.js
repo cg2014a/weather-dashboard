@@ -2,9 +2,10 @@
 const DEFAULT_LOCATION = { label: "Olathe, KS", query: "Olathe, KS", city: "Olathe", state: "KS", lat: 38.9, lon: -94.84 };
 const LOCATION_STORAGE_KEY = "skystation-location";
 const AIRNOW_KEY_STORAGE_KEY = "skystation-airnow-key";
+const PRECIP_DISPLAY_THRESHOLD = 20;
 const nwsPointUrl = ({ lat, lon }) => `https://api.weather.gov/points/${lat},${lon}`;
 const nwsAlertsUrl = ({ lat, lon }) => `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
-const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi&timezone=auto`;
+const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,olive_pollen,ragweed_pollen,dust&timezone=auto`;
 const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=precipitation_probability,visibility&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=1`;
 const epaUvUrl = (location) => location.zip
   ? `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/ZIP/${location.zip}/JSON`
@@ -64,19 +65,29 @@ class WeatherService {
     const hourlyPeriods = hourly.properties.periods || [];
     const forecastPeriods = forecast.properties.periods || [];
     const currentPeriod = hourlyPeriods[0] || forecastPeriods[0];
-    const current = this.mapCurrent(currentPeriod, forecastPeriods, observation, supplemental);
-    const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, supplemental);
+    const basePollen = airQuality?.pollen || supplemental?.pollen || this.emptyPollen();
+    const enrichedSupplemental = {
+      ...supplemental,
+      airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "0 Good",
+      pollen: basePollen
+    };
+    enrichedSupplemental.pollen = {
+      ...basePollen,
+      health: this.mapHealthRisks(enrichedSupplemental, airQuality)
+    };
+    const current = this.mapCurrent(currentPeriod, forecastPeriods, observation, enrichedSupplemental);
+    const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental);
 
     return {
       location: { city: location.label },
       current,
-      summaryStats: this.mapSummaryStats(current, currentPeriod, observation, precipitation, airQuality, supplemental),
+      summaryStats: this.mapSummaryStats(current, currentPeriod, observation, precipitation, airQuality, enrichedSupplemental),
       narrative: this.mapNarrative(currentPeriod, forecastPeriods),
       precipitation,
-      details: this.mapDetails(currentPeriod, observation, precipitation, supplemental),
+      details: this.mapDetails(currentPeriod, observation, precipitation, enrichedSupplemental),
       alert: this.mapAlert(alerts),
       hourly: this.mapHourly(hourlyPeriods),
-      daily: this.mapDaily(forecastPeriods, supplemental)
+      daily: this.mapDaily(forecastPeriods, enrichedSupplemental)
     };
   }
 
@@ -125,6 +136,7 @@ class WeatherService {
         value,
         category: this.airQualityCategory(value),
         tone: this.airQualityTone(value),
+        pollen: this.mapPollen(data.current),
         source: "Open-Meteo"
       };
     } catch (error) {
@@ -134,18 +146,30 @@ class WeatherService {
   }
 
   async getSupplementalWeather(location) {
-    const [sun, uvIndex, openMeteo] = await Promise.all([
+    const [sun, uvIndex, openMeteo, pollen] = await Promise.all([
       this.getSunData(location),
       this.getUvIndex(location),
-      this.getOpenMeteoWeather(location)
+      this.getOpenMeteoWeather(location),
+      this.getPollen(location)
     ]);
 
     return {
       ...openMeteo,
+      pollen,
       uvIndex: uvIndex ?? openMeteo?.uvIndex ?? null,
       sunrise: sun?.sunrise || openMeteo?.sunrise || null,
       sunset: sun?.sunset || openMeteo?.sunset || null
     };
+  }
+
+  async getPollen(location) {
+    try {
+      const data = await this.fetchJson(airQualityUrl(location));
+      return this.mapPollen(data.current);
+    } catch (error) {
+      console.warn("Pollen data unavailable.", error);
+      return this.emptyPollen();
+    }
   }
 
   async getSunData(location) {
@@ -208,6 +232,7 @@ class WeatherService {
         dailyPrecipAmounts: (daily.precipitation_sum || []).map((value) => this.numberOrNull(value)),
         dailyHighs: (daily.temperature_2m_max || []).map((value) => this.numberOrNull(value)),
         dailyLows: (daily.temperature_2m_min || []).map((value) => this.numberOrNull(value)),
+        dailyUvIndexes: (daily.uv_index_max || []).map((value) => this.numberOrNull(value)),
         uvIndex: this.numberOrNull(daily.uv_index_max?.[0]),
         sunrise: this.formatSunTime(daily.sunrise?.[0]),
         sunset: this.formatSunTime(daily.sunset?.[0])
@@ -301,23 +326,130 @@ class WeatherService {
       condition: period?.shortForecast || "Current conditions",
       feelsLike,
       high: todayHigh,
-      low: tonightLow
+      low: tonightLow,
+      nowAlert: this.nowAlert(period, forecastPeriods, feelsLike)
     };
   }
 
   mapSummaryStats(current, period, observation, precipitation, airQuality, supplemental) {
-    const airQualityValue = airQuality ? `${airQuality.value} ${airQuality.category}` : "0 Good";
     const windValue = `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim()
       || this.formatOpenMeteoWind(supplemental)
       || "0 mph";
 
     return [
-      { label: "High/Low", value: `${this.formatMaybeTemp(current.high)} / ${this.formatMaybeTemp(current.low)}` },
-      { label: "Humidity", value: this.readPercent(this.firstNumber(observation?.properties?.relativeHumidity?.value, supplemental?.humidity)) },
-      { label: "Wind", value: windValue },
-      { label: "Precipitation", value: precipitation.active ? `${precipitation.type} ${precipitation.current}` : "None" },
-      { label: "Air Quality", value: airQualityValue, tone: airQuality?.tone }
+      { icon: "real-feel.svg", label: "High/Low", value: `${this.formatMaybeTemp(current.high)} / ${this.formatMaybeTemp(current.low)}` },
+      { icon: "humidity.svg", label: "Humidity", value: this.readPercent(this.firstNumber(observation?.properties?.relativeHumidity?.value, supplemental?.humidity)) },
+      { icon: "wind.svg", label: "Wind", value: windValue },
+      { icon: "rain-chance.svg", label: "Precipitation", value: this.precipChance(period, supplemental) }
     ];
+  }
+
+  mapPollen(current = {}) {
+    const treeValue = Math.max(
+      this.numberOrNull(current?.alder_pollen) || 0,
+      this.numberOrNull(current?.birch_pollen) || 0,
+      this.numberOrNull(current?.olive_pollen) || 0
+    );
+    const ragweedValue = this.numberOrNull(current?.ragweed_pollen) || 0;
+    const grassValue = this.numberOrNull(current?.grass_pollen) || 0;
+    const weedValue = this.numberOrNull(current?.mugwort_pollen) || 0;
+    const dustValue = this.numberOrNull(current?.dust) || 0;
+    const moldValue = this.moldRiskFromWeather(current);
+    const danderValue = Math.max(dustValue, treeValue * 0.35, grassValue * 0.35);
+    const peak = Math.max(treeValue, ragweedValue, grassValue, weedValue, moldValue, danderValue);
+    const details = [
+      this.allergenDetail("Tree Pollen", treeValue, "pollen"),
+      this.allergenDetail("Ragweed Pollen", ragweedValue, "pollen"),
+      this.allergenDetail("Grass Pollen", grassValue, "pollen"),
+      this.allergenDetail("Mold", moldValue, "pollen"),
+      this.allergenDetail("Dust & Dander", danderValue, "dust"),
+      this.allergenDetail("Weed Pollen", weedValue, "pollen")
+    ];
+    return { value: peak, category: this.pollenCategory(peak), details };
+  }
+
+  emptyPollen() {
+    return {
+      value: 0,
+      category: "Low",
+      details: [
+        this.allergenDetail("Tree Pollen", 0, "pollen"),
+        this.allergenDetail("Ragweed Pollen", 0, "pollen"),
+        this.allergenDetail("Grass Pollen", 0, "pollen"),
+        this.allergenDetail("Mold", 0, "pollen"),
+        this.allergenDetail("Dust & Dander", 0, "dust"),
+        this.allergenDetail("Weed Pollen", 0, "pollen")
+      ]
+    };
+  }
+
+  mapHealthRisks(supplemental, airQuality) {
+    const humidity = this.numberOrNull(supplemental?.humidity) || 0;
+    const pressure = this.numberOrNull(supplemental?.pressure) || 1013;
+    const uv = this.numberOrNull(supplemental?.uvIndex) || 0;
+    const aqi = airQuality?.value || 0;
+    const pollenPeak = supplemental?.pollen?.value || 0;
+    return [
+      this.healthDetail("Arthritis", pressure < 1005 ? 52 : 12),
+      this.healthDetail("Sinus Pressure", humidity > 70 || pressure < 1005 ? 64 : 18),
+      this.healthDetail("Common Cold", humidity < 35 ? 42 : 12),
+      this.healthDetail("Flu", humidity < 35 ? 40 : 10),
+      this.healthDetail("Migraine", pressure < 1005 || uv >= 8 ? 58 : 16),
+      this.healthDetail("Asthma", Math.max(aqi, pollenPeak, humidity > 75 ? 52 : 0))
+    ];
+  }
+
+  healthDetail(label, score) {
+    const icons = {
+      Arthritis: "pressure.svg",
+      "Sinus Pressure": "pressure.svg",
+      "Common Cold": "humidity.svg",
+      Flu: "humidity.svg",
+      Migraine: "uv.svg",
+      Asthma: "aqi.svg"
+    };
+    return {
+      label,
+      value: Math.round(score),
+      category: this.riskCategory(score),
+      icon: icons[label] || "aqi.svg"
+    };
+  }
+
+  riskCategory(value) {
+    if (value >= 80) return "Extreme";
+    if (value >= 50) return "High";
+    if (value >= 25) return "Moderate";
+    return "Low";
+  }
+
+  allergenDetail(label, value, type) {
+    return {
+      label,
+      value: Math.round(value),
+      category: type === "dust" ? this.dustCategory(value) : this.pollenCategory(value),
+      icon: type === "dust" ? "aqi.svg" : "pollen.svg"
+    };
+  }
+
+  moldRiskFromWeather(current = {}) {
+    const humidity = this.numberOrNull(current?.relative_humidity_2m) || 0;
+    if (humidity >= 85) return 70;
+    if (humidity >= 70) return 42;
+    return 8;
+  }
+
+  pollenCategory(value) {
+    if (value >= 100) return "Very High";
+    if (value >= 50) return "High";
+    if (value >= 15) return "Moderate";
+    return "Low";
+  }
+
+  dustCategory(value) {
+    if (value >= 100) return "High";
+    if (value >= 50) return "Moderate";
+    return "Low";
   }
 
   airQualityCategory(value) {
@@ -335,11 +467,16 @@ class WeatherService {
   }
 
   mapDetails(period, observation, precipitation, supplemental) {
+    const humidity = this.readPercent(this.firstNumber(observation?.properties?.relativeHumidity?.value, supplemental?.humidity));
+    const dewPoint = this.readTemperatureLabel(observation?.properties?.dewpoint?.value, supplemental?.dewPoint);
+    const wind = `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || this.formatOpenMeteoWind(supplemental) || "0 mph";
+    const pollen = supplemental?.pollen || this.emptyPollen();
     return [
-      { icon: "rain-chance.svg", label: "Precip Chance", value: this.precipChance(period, supplemental) },
-      { icon: "weather-rain.svg", label: "Precip Amount", value: precipitation?.today?.replace(" today", "") || "0.00 in" },
-      { icon: "humidity.svg", label: "Humidity", value: this.readPercent(this.firstNumber(observation?.properties?.relativeHumidity?.value, supplemental?.humidity)) },
-      { icon: "dew.svg", label: "Dew Point", value: this.readTemperatureLabel(observation?.properties?.dewpoint?.value, supplemental?.dewPoint) },
+      { icon: "rain-chance.svg", label: "Precipitation", value: `${this.precipChance(period, supplemental)} / ${precipitation?.today?.replace(" today", "") || "0.00 in"}` },
+      { icon: "humidity.svg", label: "Humidity / Dew Point", value: `${humidity} / ${dewPoint}` },
+      { icon: "wind.svg", label: "Wind / Gust", value: `${wind} / ${this.readWindGust(period, supplemental)}` },
+      { icon: "aqi.svg", label: "Air Quality", value: supplemental?.airQualityLabel || "0 Good" },
+      { icon: "pollen.svg", label: "Pollen", value: pollen.category, type: "pollen", details: pollen.details, health: pollen.health },
       { icon: "uv.svg", label: "UV Index", value: this.formatUvIndex(supplemental?.uvIndex) },
       { icon: "visibility.svg", label: "Visibility", value: this.readDistance(this.firstNumber(observation?.properties?.visibility?.value, supplemental?.visibility)) },
       { icon: "pressure.svg", label: "Pressure", value: this.readPressureWithFallback(observation?.properties?.barometricPressure?.value, supplemental?.pressure) },
@@ -357,6 +494,32 @@ class WeatherService {
     return `${rounded} Extreme`;
   }
 
+  nowAlert(period, forecastPeriods, feelsLike) {
+    const now = Date.now();
+    const upcomingPeriods = forecastPeriods.filter((item) => this.periodIsCurrentOrFuture(item, now));
+    const nextWetPeriod = upcomingPeriods.find((item) => this.precipValue(item) >= 40 || /thunder|storm/i.test(item.shortForecast || ""));
+    const gust = Number(this.readWindGust(period).match(/\d+/)?.[0] || 0);
+    if (Number(feelsLike) >= 101) return `Heat index near ${Math.round(feelsLike)}\u00B0 based on the latest forecast.`;
+    if (nextWetPeriod) {
+      const start = new Date(nextWetPeriod.startTime).getTime();
+      const time = Number.isFinite(start) && start <= now
+        ? "now"
+        : `around ${new Date(nextWetPeriod.startTime).toLocaleTimeString([], { hour: "numeric" }).replace(" ", "")}`;
+      const type = /thunder|storm/i.test(nextWetPeriod.shortForecast || "") ? "Thunderstorms" : "Rain";
+      return `${type} possible ${time}.`;
+    }
+    if (gust >= 30) return `Wind gusts may reach ${gust} mph.`;
+    return "";
+  }
+
+  periodIsCurrentOrFuture(period, now = Date.now()) {
+    const start = new Date(period?.startTime).getTime();
+    const end = new Date(period?.endTime).getTime();
+    if (Number.isFinite(end)) return end > now;
+    if (Number.isFinite(start)) return start >= now;
+    return false;
+  }
+
   mapNarrative(period, forecastPeriods) {
     const matchingPeriod = forecastPeriods.find((item) => item.isDaytime === period?.isDaytime) || forecastPeriods[0];
     return matchingPeriod?.detailedForecast || period?.detailedForecast || period?.shortForecast || "Current conditions are updating.";
@@ -364,18 +527,27 @@ class WeatherService {
 
   mapPrecipitation(currentPeriod, hourlyPeriods, supplemental) {
     const chance = this.precipValue(currentPeriod, supplemental);
-    const wetHours = hourlyPeriods.slice(0, 6).filter((period) => this.precipValue(period) > 0);
-    const type = this.precipType(currentPeriod?.shortForecast || wetHours[0]?.shortForecast);
+    const nextHourPeriods = hourlyPeriods.slice(0, 2);
+    const nextHourPeak = Math.max(...nextHourPeriods.map((period) => this.precipValue(period, supplemental)), 0);
+    const wetHours = nextHourPeriods.filter((period) => this.precipValue(period, supplemental) >= PRECIP_DISPLAY_THRESHOLD);
+    const precipText = [currentPeriod, ...wetHours].map((period) => period?.shortForecast || "").join(" ");
+    const type = this.precipType(precipText);
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
-    const active = expectedAmount >= 0.15;
+    const activelyOccurring = this.isPrecipActivelyOccurring(currentPeriod, supplemental);
+    const active = this.isSupportedPrecipType(type) && (activelyOccurring || nextHourPeak >= PRECIP_DISPLAY_THRESHOLD);
+    const summary = activelyOccurring && nextHourPeak < PRECIP_DISPLAY_THRESHOLD
+      ? `${type} is currently occurring.`
+      : expectedAmount > 0
+        ? `${type} totals may reach ${expectedAmount.toFixed(2)} in based on the latest forecast.`
+        : `${nextHourPeak}% chance of ${type.toLowerCase()} within the next hour.`;
 
     return {
       active,
       type,
-      icon: type === "Snow" ? "weather-snow.svg" : "weather-rain.svg",
-      summary: active ? `${type} totals may reach ${expectedAmount.toFixed(2)} in based on the latest forecast.` : "No significant precipitation expected.",
+      icon: type === "Snow" || type === "Sleet" ? "weather-snow.svg" : "weather-rain.svg",
+      summary: active ? summary : "No significant precipitation expected.",
       current: active ? `${chance}% now` : "0% now",
-      nextHour: `${this.precipValue(hourlyPeriods[1])}% next hour`,
+      nextHour: `${this.precipValue(hourlyPeriods[1], supplemental)}% next hour`,
       today: expectedAmount > 0 ? `${expectedAmount.toFixed(2)} in today` : "",
       timeline: this.nextHourPrecipTimeline(hourlyPeriods),
       note: this.precipNote(hourlyPeriods)
@@ -383,21 +555,24 @@ class WeatherService {
   }
 
   mapAlert(alerts) {
-    const activeAlert = alerts.features?.[0]?.properties;
-    if (!activeAlert) return null;
-    const headline = activeAlert.event || "Weather Alert";
-    const summary = activeAlert.headline || activeAlert.description || "An active weather alert has been issued for this area.";
-    const details = [
-      this.cleanAlertText(activeAlert.description),
-      activeAlert.instruction ? `What to do:\n${this.cleanAlertText(activeAlert.instruction)}` : "",
-      activeAlert.areaDesc ? `Areas affected:\n${this.cleanAlertText(activeAlert.areaDesc)}` : "",
-      activeAlert.expires ? `Expires:\n${this.formatAlertTime(activeAlert.expires)}` : ""
-    ].filter(Boolean);
+    const activeAlerts = alerts.features?.map((feature) => feature.properties).filter(Boolean) || [];
+    if (!activeAlerts.length) return null;
+    const headline = activeAlerts.length > 1 ? `${activeAlerts.length} Weather Alerts` : activeAlerts[0].event || "Weather Alert";
+    const summary = activeAlerts.length > 1
+      ? activeAlerts.map((alert) => alert.event || alert.headline || "Weather Alert").join(" • ")
+      : activeAlerts[0].headline || activeAlerts[0].description || "An active weather alert has been issued for this area.";
+    const details = activeAlerts.map((alert, index) => [
+      activeAlerts.length > 1 ? `Alert ${index + 1}: ${alert.event || "Weather Alert"}` : "",
+      this.cleanAlertText(alert.description),
+      alert.instruction ? `What to do:\n${this.cleanAlertText(alert.instruction)}` : "",
+      alert.areaDesc ? `Areas affected:\n${this.cleanAlertText(alert.areaDesc)}` : "",
+      alert.expires ? `Expires:\n${this.formatAlertTime(alert.expires)}` : ""
+    ].filter(Boolean).join("\n\n"));
 
     return {
       headline,
       body: this.cleanAlertText(summary),
-      details: [...new Set(details)].join("\n\n")
+      details: details.join("\n\n")
     };
   }
 
@@ -464,7 +639,7 @@ class WeatherService {
           { icon: this.iconForForecast(dayPeriod.shortForecast, true), title: this.dayTitle(dayPeriod.startTime), text: dayPeriod.detailedForecast || dayPeriod.shortForecast },
           { icon: this.iconForForecast(nightPeriod?.shortForecast, false), title: this.nightTitle(dayPeriod.startTime), text: nightPeriod?.detailedForecast || "Night forecast is updating." }
         ],
-        metrics: this.dayMetrics(low, high, precip, text, precipAmount)
+        metrics: this.dayMetrics(low, high, precip, text, precipAmount, dayPeriod, nightPeriod, supplemental, dayIndex)
       }
     };
   }
@@ -488,17 +663,24 @@ class WeatherService {
         story: [
           { icon: this.iconForForecast(period?.shortForecast, false), title: "Tonight", text }
         ],
-        metrics: this.dayMetrics(temp, temp, precip, text, precipAmount)
+        metrics: this.dayMetrics(temp, temp, precip, text, precipAmount, period, null, supplemental, 0)
       }
     };
   }
 
-  dayMetrics(low, high, precip, text, precipAmount) {
+  dayMetrics(low, high, precip, text, precipAmount, dayPeriod, nightPeriod, supplemental, dayIndex = 0) {
+    const combinedText = `${text || ""} ${dayPeriod?.shortForecast || ""} ${nightPeriod?.shortForecast || ""}`;
+    const uv = supplemental?.dailyUvIndexes?.[dayIndex] ?? supplemental?.uvIndex;
     return [
-      { label: "Temperature", value: `${this.formatMaybeTemp(low)} - ${this.formatMaybeTemp(high)}` },
       { label: "Feels Like", value: this.feelsLikeFromText(text, low, high) },
       { label: "Precip Chance", value: precip > 0 ? `${precip}%` : "0%" },
-      { label: "Precip Amount", value: precipAmount || "0.00 in" }
+      { label: "Precip Amount", value: precipAmount || "0.00 in" },
+      { label: "Wind", value: this.windFromText(combinedText) || this.formatOpenMeteoWind(supplemental) || "0 mph" },
+      { label: "Gusts", value: this.gustFromText(combinedText) || this.readWindGust(dayPeriod, supplemental) },
+      { label: "Humidity", value: this.readPercent(supplemental?.humidity) },
+      { label: "UV", value: this.formatUvIndex(uv) },
+      { label: "Air Quality", value: supplemental?.airQualityLabel || "0 Good" },
+      { label: "Pollen", value: supplemental?.pollen?.category || "Low" }
     ];
   }
 
@@ -513,8 +695,21 @@ class WeatherService {
 
   precipType(text = "") {
     const value = text.toLowerCase();
-    if (value.includes("snow") || value.includes("sleet") || value.includes("ice")) return "Snow";
+    if (value.includes("sleet") || value.includes("ice pellets")) return "Sleet";
+    if (value.includes("snow")) return "Snow";
     return "Rain";
+  }
+
+  isSupportedPrecipType(type) {
+    return ["Rain", "Snow", "Sleet"].includes(type);
+  }
+
+  isPrecipActivelyOccurring(period, supplemental) {
+    const currentAmount = this.firstNumber(supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
+    if (currentAmount > 0) return true;
+    const currentText = period?.shortForecast || "";
+    if (/chance|possible|likely/i.test(currentText)) return false;
+    return /rain|showers|drizzle|snow|sleet|ice pellets/i.test(currentText);
   }
 
   precipValue(period, supplemental) {
@@ -525,7 +720,7 @@ class WeatherService {
 
   precipChance(period, supplemental) {
     const chance = this.precipValue(period, supplemental);
-    return chance > 0 ? `${chance}%` : "None";
+    return `${chance}%`;
   }
 
   precipNote(periods) {
@@ -567,7 +762,7 @@ class WeatherService {
   }
 
   nextHourPrecipTimeline(periods) {
-    const anchors = periods.slice(0, 4).map((period) => this.precipValue(period));
+    const anchors = periods.slice(0, 2).map((period) => this.precipValue(period));
     if (!anchors.length) return [];
     const values = [];
     for (let index = 0; index < 21; index += 1) {
@@ -611,6 +806,24 @@ class WeatherService {
     const hpa = this.numberOrNull(fallbackHpaValue);
     if (hpa === null) return "0.00 in";
     return `${(hpa * 0.029529983).toFixed(2)} in`;
+  }
+
+  readWindGust(period, supplemental) {
+    const textGust = this.gustFromText(`${period?.detailedForecast || ""} ${period?.shortForecast || ""}`);
+    if (textGust) return textGust;
+    const gust = this.numberOrNull(supplemental?.windGusts);
+    return gust === null ? "0 mph" : `${Math.round(gust)} mph`;
+  }
+
+  windFromText(text = "") {
+    const match = text.match(/(?:north|south|east|west|northeast|northwest|southeast|southwest|[NSEW]{1,3})\s+wind\s+(?:around\s+)?(\d+(?:\s+to\s+\d+)?)\s*mph/i)
+      || text.match(/wind\s+(?:around\s+)?(\d+(?:\s+to\s+\d+)?)\s*mph/i);
+    return match ? `${match[1].replace(/\s+/g, " ")} mph` : "";
+  }
+
+  gustFromText(text = "") {
+    const match = text.match(/gusts? (?:as high as |up to )?(\d+)\s*mph/i);
+    return match ? `${match[1]} mph` : "";
   }
 
   formatMaybeTemp(value) {
@@ -683,6 +896,8 @@ const elements = {};
 const formatTemp = (value) => Number.isFinite(Number(value)) ? `${value}\u00B0` : "--";
 const iconSrc = (icon) => `${ICON_PATH}${icon}`;
 let currentLocation = loadSavedLocation();
+let currentPollenDetails = [];
+let currentHealthDetails = [];
 
 function loadSavedLocation() {
   try {
@@ -712,11 +927,12 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus",
     "currentCard", "currentTemp", "currentIcon",
-    "condition", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
+    "condition", "nowAlert", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "dailyForecast",
-    "expandedWeather", "currentNarrative", "radarPreviewCard", "radarPreviewFrame", "radarFrame", "radarPreviewLabel", "radarPanelLabel", "radarToggle", "radarPanel", "radarClose", "radarTime"
+    "expandedWeather", "currentNarrative", "radarPreviewCard", "radarPreviewFrame", "radarFrame", "radarPreviewLabel", "radarPanelLabel", "radarToggle", "radarPanel", "radarClose", "radarTime",
+    "pollenPanel", "pollenClose", "pollenList", "pollenSummary"
   ].forEach((id) => {
     elements[id] = document.getElementById(id);
   });
@@ -740,7 +956,10 @@ function updateClock() {
 function renderCurrentWeather(data) {
   setText("currentTemp", formatTemp(data.current.temperature));
   setIcon(elements.currentIcon, data.current.icon, data.current.condition);
+  setIcon(elements.outlookIcon, data.current.icon, "");
   setText("condition", data.current.condition);
+  setText("nowAlert", data.current.nowAlert);
+  elements.nowAlert.hidden = !data.current.nowAlert;
   setText("feelsLike", formatTemp(data.current.feelsLike));
   setText("currentNarrative", data.narrative);
 }
@@ -749,18 +968,25 @@ function renderSummaryStats(stats) {
   elements.currentStats.replaceChildren();
   stats.forEach((item) => {
     const row = document.createElement("div");
+    const icon = document.createElement("img");
+    const text = document.createElement("span");
     const label = document.createElement("span");
     const value = document.createElement("strong");
     row.className = item.tone ? `stat-row ${item.tone}` : "stat-row";
+    text.className = "stat-label";
+    setIcon(icon, item.icon || "weather-cloud.svg", "");
     label.textContent = item.label;
     value.textContent = item.value;
-    row.append(label, value);
+    text.append(icon, label);
+    row.append(text, value);
     elements.currentStats.appendChild(row);
   });
 }
 
 function renderDetails(details) {
   elements.detailsGrid.replaceChildren();
+  currentPollenDetails = [];
+  currentHealthDetails = [];
   details.forEach((item) => {
     const card = document.createElement("article");
     const icon = document.createElement("img");
@@ -776,6 +1002,27 @@ function renderDetails(details) {
       times.className = "sun-times";
       times.innerHTML = `<div><span>Sunrise</span><strong>${item.sunrise}</strong></div><div><span>Sunset</span><strong>${item.sunset}</strong></div>`;
       card.append(icon, label, times);
+    } else if (item.type === "pollen") {
+      currentPollenDetails = item.details || [];
+      currentHealthDetails = item.health || [];
+      card.classList.add("is-clickable");
+      card.setAttribute("role", "button");
+      card.setAttribute("tabindex", "0");
+      card.setAttribute("aria-label", "Open pollen and allergen details");
+      value.textContent = item.value;
+      card.append(icon, label, value);
+      card.addEventListener("click", (event) => {
+        event.stopPropagation();
+        renderPollenPanel();
+        togglePollen(true);
+      });
+      card.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        renderPollenPanel();
+        togglePollen(true);
+      });
     } else {
       value.textContent = item.value;
       card.append(icon, label, value);
@@ -784,10 +1031,67 @@ function renderDetails(details) {
   });
 }
 
+function renderPollenPanel() {
+  elements.pollenList.replaceChildren();
+  const details = currentPollenDetails.length ? currentPollenDetails : [
+    { label: "Tree Pollen", value: 0, category: "Low" },
+    { label: "Ragweed Pollen", value: 0, category: "Low" },
+    { label: "Grass Pollen", value: 0, category: "Low" },
+    { label: "Mold", value: 0, category: "Low" },
+    { label: "Dust & Dander", value: 0, category: "Low" },
+    { label: "Weed Pollen", value: 0, category: "Low" }
+  ];
+  const health = currentHealthDetails.length ? currentHealthDetails : [
+    { label: "Arthritis", value: 0, category: "Low" },
+    { label: "Sinus Pressure", value: 0, category: "Low" },
+    { label: "Common Cold", value: 0, category: "Low" },
+    { label: "Flu", value: 0, category: "Low" },
+    { label: "Migraine", value: 0, category: "Low" },
+    { label: "Asthma", value: 0, category: "Low" }
+  ];
+  const peak = details.reduce((max, item) => Number(item.value) > Number(max.value) ? item : max, details[0]);
+  setText("pollenSummary", `${peak.label} is the highest current allergen at ${peak.category}.`);
+
+  elements.pollenList.append(
+    renderPollenSection("Allergies", "How high are allergens today?", details),
+    renderPollenSection("Health", "How will the weather impact my health today?", health)
+  );
+}
+
+function renderPollenSection(titleText, subtitleText, items) {
+  const section = document.createElement("section");
+  const title = document.createElement("h3");
+  const subtitle = document.createElement("p");
+  const grid = document.createElement("div");
+  section.className = "pollen-section";
+  title.textContent = titleText;
+  subtitle.textContent = subtitleText;
+  grid.className = "pollen-card-grid";
+  items.forEach((item) => grid.appendChild(renderPollenCard(item)));
+  section.append(title, subtitle, grid);
+  return section;
+}
+
+function renderPollenCard(item) {
+  const card = document.createElement("article");
+  const icon = document.createElement("img");
+  const label = document.createElement("strong");
+  const meter = document.createElement("span");
+  const fill = document.createElement("span");
+  const value = document.createElement("span");
+  card.className = `pollen-card ${item.category.toLowerCase().replace(/\s+/g, "-")}`;
+  meter.className = "pollen-meter";
+  setIcon(icon, item.icon || "pollen.svg", "");
+  fill.style.setProperty("--pollen-width", `${Math.max(14, Math.min(100, Number(item.value) || 0))}%`);
+  label.textContent = item.label;
+  value.textContent = item.category;
+  meter.appendChild(fill);
+  card.append(icon, label, meter, value);
+  return card;
+}
+
 function hasActivePrecipitation(precipitation) {
-  if (!precipitation || !precipitation.active) return false;
-  const amount = Number((precipitation.today || "").match(/\d+(?:\.\d+)?/)?.[0] || 0);
-  return amount >= 0.15;
+  return Boolean(precipitation?.active);
 }
 
 function shouldShowPrecipPercent(value) {
@@ -833,7 +1137,8 @@ function renderPrecipTimeline(precipitation) {
 
   values.forEach((value) => {
     const bar = document.createElement("span");
-    bar.style.setProperty("--bar-height", `${Math.max(12, value)}%`);
+    const displayValue = precipBarHeight(value, bars.childElementCount);
+    bar.style.setProperty("--bar-height", `${displayValue}%`);
     bars.appendChild(bar);
   });
 
@@ -850,16 +1155,27 @@ function renderPrecipTimeline(precipitation) {
 
 function precipTimelineTitle(precipitation, values) {
   const peak = Math.max(...values, 0);
-  const type = precipitation.type === "Snow" ? "Snow" : "Rain";
+  const type = precipitation.type || "Rain";
   if (peak >= 70) return `High ${type.toLowerCase()} chance next hour`;
-  if (peak >= 35) return `Moderate ${type.toLowerCase()} chance next hour`;
-  if (peak > 0) return `Low ${type.toLowerCase()} chance next hour`;
+  if (peak >= 40) return `Med ${type.toLowerCase()} chance next hour`;
+  if (peak >= PRECIP_DISPLAY_THRESHOLD) return `Low ${type.toLowerCase()} chance next hour`;
   return `No ${type.toLowerCase()} chance next hour`;
 }
 
 function normalizeTimeline(values = []) {
   const timeline = values.length ? values : Array.from({ length: 21 }, () => 0);
-  return timeline.slice(0, 21).map((value) => Math.max(0, Math.min(100, Number(value) || 0)));
+  return timeline.slice(0, 21).map((value) => {
+    const chance = Math.max(0, Math.min(100, Number(value) || 0));
+    return chance < PRECIP_DISPLAY_THRESHOLD ? 0 : chance;
+  });
+}
+
+function precipBarHeight(value, index) {
+  if (value < PRECIP_DISPLAY_THRESHOLD) return 0;
+  const wave = Math.sin(index * 0.92) * 4 + Math.cos(index * 0.47) * 2;
+  if (value < 40) return Math.max(20, Math.min(39, value + wave));
+  if (value < 70) return Math.max(40, Math.min(69, value + wave));
+  return Math.max(70, Math.min(100, value + wave));
 }
 function renderAlert(alert) {
   if (!alert) {
@@ -1038,6 +1354,13 @@ function toggleRadar(force) {
   elements.radarClose.textContent = shouldOpen ? "Back" : "Close";
 }
 
+function togglePollen(force) {
+  const shouldOpen = typeof force === "boolean" ? force : elements.pollenPanel.hidden;
+  elements.pollenPanel.hidden = !shouldOpen;
+  elements.pollenPanel.classList.toggle("is-fullscreen", shouldOpen);
+  document.body.classList.toggle("pollen-open", shouldOpen);
+}
+
 function toggleSettings(force) {
   const shouldOpen = typeof force === "boolean" ? force : elements.settingsPanel.hidden;
   elements.settingsPanel.hidden = !shouldOpen;
@@ -1082,6 +1405,7 @@ function bindInteractions() {
     toggleRadar(true);
   });
   elements.radarClose.addEventListener("click", () => toggleRadar(false));
+  elements.pollenClose.addEventListener("click", () => togglePollen(false));
   elements.alertCard.addEventListener("click", () => togglePanel(elements.alertCard, elements.alertDetails));
   elements.settingsToggle.addEventListener("click", () => toggleSettings());
   elements.settingsClose.addEventListener("click", () => toggleSettings(false));
@@ -1089,6 +1413,44 @@ function bindInteractions() {
     if (event.target === elements.settingsPanel) toggleSettings(false);
   });
   elements.locationForm.addEventListener("submit", handleLocationSubmit);
+  bindPullToRefresh();
+}
+
+function bindPullToRefresh() {
+  if (!("ontouchstart" in window) || !elements.pullRefresh) return;
+  let startY = 0;
+  let distance = 0;
+  let tracking = false;
+
+  window.addEventListener("touchstart", (event) => {
+    if (window.scrollY > 0 || elements.radarPanel?.classList.contains("is-fullscreen")) return;
+    tracking = true;
+    startY = event.touches[0].clientY;
+    distance = 0;
+  }, { passive: true });
+
+  window.addEventListener("touchmove", (event) => {
+    if (!tracking) return;
+    distance = event.touches[0].clientY - startY;
+    elements.pullRefresh.classList.toggle("is-visible", distance > 42);
+    elements.pullRefresh.textContent = distance > 92 ? "Release to refresh" : "Pull to refresh";
+  }, { passive: true });
+
+  window.addEventListener("touchend", async () => {
+    if (!tracking) return;
+    tracking = false;
+    if (distance <= 92) {
+      elements.pullRefresh.classList.remove("is-visible");
+      return;
+    }
+    elements.pullRefresh.classList.add("is-refreshing");
+    elements.pullRefresh.textContent = "Refreshing...";
+    await renderDashboard();
+    elements.pullRefresh.textContent = "Updated";
+    window.setTimeout(() => {
+      elements.pullRefresh.classList.remove("is-visible", "is-refreshing");
+    }, 650);
+  }, { passive: true });
 }
 
 function animateTemperatureRefresh() {
