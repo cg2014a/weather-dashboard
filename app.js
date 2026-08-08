@@ -1,79 +1,46 @@
 ﻿const ICON_PATH = "icons/";
-const NWS_POINT_URL = "https://api.weather.gov/points/38.9,-94.84";
-const NWS_ALERTS_URL = "https://api.weather.gov/alerts/active?point=38.9,-94.84";
+const DEFAULT_LOCATION = { label: "Olathe, KS", query: "Olathe, KS", city: "Olathe", state: "KS", lat: 38.9, lon: -94.84 };
+const LOCATION_STORAGE_KEY = "skystation-location";
+const AIRNOW_KEY_STORAGE_KEY = "skystation-airnow-key";
+const nwsPointUrl = ({ lat, lon }) => `https://api.weather.gov/points/${lat},${lon}`;
+const nwsAlertsUrl = ({ lat, lon }) => `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
+const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi&timezone=auto`;
+const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=precipitation_probability,visibility&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=1`;
+const epaUvUrl = (location) => location.zip
+  ? `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/ZIP/${location.zip}/JSON`
+  : `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/CITY/${encodeURIComponent(location.city || "")}/STATE/${location.state || ""}/JSON`;
+const airNowUrl = ({ lat, lon }, apiKey) => `https://www.airnowapi.org/aq/observation/latLong/current/?format=application/json&latitude=${lat}&longitude=${lon}&distance=25&API_KEY=${encodeURIComponent(apiKey)}`;
+const sunUrl = ({ lat, lon }) => `https://api.sunrise-sunset.org/v2?lat=${lat}&lng=${lon}`;
 
-const placeholderWeather = {
-  location: { city: "Olathe, Kansas" },
+const emptyWeather = {
+  location: { city: DEFAULT_LOCATION.label },
   current: {
-    temperature: 84,
-    icon: "weather-sunny.svg",
-    condition: "Sunny",
-    feelsLike: 89,
-    high: 88,
-    low: 64
+    temperature: null,
+    icon: "weather-cloud.svg",
+    condition: "Loading weather",
+    feelsLike: null,
+    high: null,
+    low: null
   },
-  summaryStats: [
-    { label: "High/Low", value: "88\u00B0 / 64\u00B0" },
-    { label: "Humidity", value: "58%" },
-    { label: "Wind", value: "SSE 4 mph" },
-    { label: "Precipitation", value: "Rain 0.01 in" },
-    { label: "Air Quality", value: "Poor", tone: "warning" }
-  ],
-  narrative: "Clouds are increasing with intermittent rain nearby. Roads may be damp where showers pass through.",
-  precipitation: {
-    active: false,
-    type: "Rain",
-    icon: "weather-rain.svg",
-    summary: "No precipitation expected soon.",
-    current: "0% now",
-    nextHour: "0% next hour",
-    today: "0% today",
-    timeline: [],
-    note: "No precipitation expected soon."
-  },
-  details: [
-    { icon: "rain-chance.svg", label: "Chance Rain", value: "30%" },
-    { icon: "humidity.svg", label: "Humidity", value: "58%" },
-    { icon: "dew.svg", label: "Dew Point", value: "57\u00B0" },
-    { icon: "uv.svg", label: "UV Index", value: "5 Moderate" },
-    { icon: "visibility.svg", label: "Visibility", value: "10 mi" },
-    { icon: "pressure.svg", label: "Pressure", value: "29.92 in" }
-  ],
+  summaryStats: [],
+  narrative: "Weather data is loading.",
+  precipitation: { active: false, type: "Rain", icon: "weather-rain.svg", summary: "No significant precipitation expected.", current: "0% now", nextHour: "0% next hour", today: "", timeline: [], note: "No precipitation expected soon." },
+  details: [],
   alert: null,
-  hourly: [
-    { time: "10 AM", icon: "weather-sunny.svg", temp: 84, precip: "0%" },
-    { time: "11 AM", icon: "weather-sunny.svg", temp: 85, precip: "0%" },
-    { time: "12 PM", icon: "weather-partly.svg", temp: 86, precip: "10%" },
-    { time: "1 PM", icon: "weather-cloud.svg", temp: 87, precip: "20%" },
-    { time: "2 PM", icon: "weather-rain.svg", temp: 86, precip: "30%" },
-    { time: "3 PM", icon: "weather-storm.svg", temp: 84, precip: "40%" },
-    { time: "4 PM", icon: "weather-storm.svg", temp: 82, precip: "60%" },
-    { time: "5 PM", icon: "weather-cloud.svg", temp: 80, precip: "40%" }
-  ],
-  daily: [
-    { day: "Fri", icon: "weather-partly.svg", condition: "Partly Cloudy", high: 90, low: 66, precip: "10%", range: 88, details: { story: [{ icon: "weather-partly.svg", title: "Today", text: "Humid with partly cloudy skies and afternoon heat building." }, { icon: "weather-cloud.svg", title: "Tonight", text: "Mild and partly cloudy with a light breeze." }], metrics: [{ label: "Temperature", value: "66 - 90\u00B0" }, { label: "Feels Like", value: "70 - 98\u00B0" }, { label: "Precip Chance", value: "10%" }, { label: "Precip Amount", value: "0.00 in" }, { label: "Sunrise", value: "6:27 AM" }, { label: "Sunset", value: "8:24 PM" }] } },
-    { day: "Sat", icon: "weather-storm.svg", condition: "Scattered Storms", high: 86, low: 65, precip: "40%", range: 70, details: { story: [{ icon: "weather-storm.svg", title: "Saturday", text: "Scattered storms may develop during the afternoon and early evening." }, { icon: "weather-rain.svg", title: "Night", text: "Storm chances taper with clouds lingering overnight." }], metrics: [{ label: "Temperature", value: "65 - 86\u00B0" }, { label: "Feels Like", value: "68 - 92\u00B0" }, { label: "Precip Chance", value: "40%" }, { label: "Precip Amount", value: "0.18 in" }, { label: "Sunrise", value: "6:28 AM" }, { label: "Sunset", value: "8:23 PM" }] } },
-    { day: "Sun", icon: "weather-sunny.svg", condition: "Sunny", high: 89, low: 67, precip: "10%", range: 84, details: { story: [{ icon: "weather-sunny.svg", title: "Sunday", text: "Sunny, warm, and mostly dry through the day." }, { icon: "weather-cloud.svg", title: "Night", text: "Mostly clear with a warm overnight low." }], metrics: [{ label: "Temperature", value: "67 - 89\u00B0" }, { label: "Feels Like", value: "70 - 95\u00B0" }, { label: "Precip Chance", value: "10%" }, { label: "Precip Amount", value: "0.00 in" }, { label: "Sunrise", value: "6:29 AM" }, { label: "Sunset", value: "8:22 PM" }] } },
-    { day: "Mon", icon: "weather-partly.svg", condition: "Partly Cloudy", high: 91, low: 68, precip: "10%", range: 100, details: { story: [{ icon: "weather-partly.svg", title: "Monday", text: "Partly cloudy and hotter, with afternoon heat building." }, { icon: "weather-cloud.svg", title: "Night", text: "Warm and quiet with patchy clouds." }], metrics: [{ label: "Temperature", value: "68 - 91\u00B0" }, { label: "Feels Like", value: "72 - 99\u00B0" }, { label: "Precip Chance", value: "10%" }, { label: "Precip Amount", value: "0.00 in" }, { label: "Sunrise", value: "6:30 AM" }, { label: "Sunset", value: "8:21 PM" }] } },
-    { day: "Tue", icon: "weather-storm.svg", condition: "Chance of Storms", high: 87, low: 66, precip: "30%", range: 74, details: { story: [{ icon: "weather-storm.svg", title: "Tuesday", text: "A few storms are possible later in the day." }, { icon: "weather-cloud.svg", title: "Night", text: "Partly cloudy after any evening showers move out." }], metrics: [{ label: "Temperature", value: "66 - 87\u00B0" }, { label: "Feels Like", value: "70 - 93\u00B0" }, { label: "Precip Chance", value: "30%" }, { label: "Precip Amount", value: "0.08 in" }, { label: "Sunrise", value: "6:31 AM" }, { label: "Sunset", value: "8:20 PM" }] } },
-    { day: "Wed", icon: "weather-partly.svg", condition: "Partly Cloudy", high: 85, low: 64, precip: "20%", range: 66, details: { story: [{ icon: "weather-partly.svg", title: "Wednesday", text: "Partly cloudy with comfortable morning conditions." }, { icon: "weather-cloud.svg", title: "Night", text: "A few clouds with a slight shower chance." }], metrics: [{ label: "Temperature", value: "64 - 85\u00B0" }, { label: "Feels Like", value: "67 - 90\u00B0" }, { label: "Precip Chance", value: "20%" }, { label: "Precip Amount", value: "0.03 in" }, { label: "Sunrise", value: "6:32 AM" }, { label: "Sunset", value: "8:19 PM" }] } },
-    { day: "Thu", icon: "weather-sunny.svg", condition: "Sunny", high: 88, low: 64, precip: "10%", range: 78, details: { story: [{ icon: "weather-sunny.svg", title: "Thursday", text: "Sunny and humid with a light south-southeast breeze." }, { icon: "weather-cloud.svg", title: "Night", text: "Warm evening with a few passing clouds and low rain chances." }], metrics: [{ label: "Temperature", value: "64 - 88\u00B0" }, { label: "Feels Like", value: "69 - 96\u00B0" }, { label: "Precip Chance", value: "10%" }, { label: "Precip Amount", value: "0.00 in" }, { label: "Sunrise", value: "6:33 AM" }, { label: "Sunset", value: "8:18 PM" }] } }
-  ]
+  hourly: [],
+  daily: []
 };
 
 class WeatherService {
-  constructor(seedData) {
-    this.seedData = seedData;
-  }
-
-  async getWeather() {
-    const fallback = this.clone(this.seedData);
+  async getWeather(location = DEFAULT_LOCATION) {
+    const fallback = this.clone(emptyWeather);
+    fallback.location = { city: location.label };
 
     try {
-      const liveData = await this.getNwsWeather();
+      const liveData = await this.getNwsWeather(location);
       return { ...fallback, ...liveData };
     } catch (error) {
-      console.warn("Using placeholder weather data.", error);
+      console.warn("Live weather unavailable.", error);
       return fallback;
     }
   }
@@ -82,33 +49,224 @@ class WeatherService {
     return JSON.parse(JSON.stringify(data));
   }
 
-  async getNwsWeather() {
-    const point = await this.fetchJson(NWS_POINT_URL);
+  async getNwsWeather(location) {
+    const point = await this.fetchJson(nwsPointUrl(location));
     const properties = point.properties;
-    const [forecast, hourly, alerts, observation] = await Promise.all([
+    const [forecast, hourly, alerts, observation, airQuality, supplemental] = await Promise.all([
       this.fetchJson(properties.forecast),
       this.fetchJson(properties.forecastHourly),
-      this.fetchJson(NWS_ALERTS_URL),
-      this.getLatestObservation(properties.observationStations)
+      this.fetchJson(nwsAlertsUrl(location)),
+      this.getLatestObservation(properties.observationStations),
+      this.getAirQuality(location),
+      this.getSupplementalWeather(location)
     ]);
 
     const hourlyPeriods = hourly.properties.periods || [];
     const forecastPeriods = forecast.properties.periods || [];
     const currentPeriod = hourlyPeriods[0] || forecastPeriods[0];
-    const current = this.mapCurrent(currentPeriod, forecastPeriods, observation);
-    const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods);
+    const current = this.mapCurrent(currentPeriod, forecastPeriods, observation, supplemental);
+    const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, supplemental);
 
     return {
-      location: { city: "Olathe, Kansas" },
+      location: { city: location.label },
       current,
-      summaryStats: this.mapSummaryStats(current, currentPeriod, observation, precipitation),
+      summaryStats: this.mapSummaryStats(current, currentPeriod, observation, precipitation, airQuality, supplemental),
       narrative: this.mapNarrative(currentPeriod, forecastPeriods),
       precipitation,
-      details: this.mapDetails(currentPeriod, observation),
+      details: this.mapDetails(currentPeriod, observation, precipitation, supplemental),
       alert: this.mapAlert(alerts),
       hourly: this.mapHourly(hourlyPeriods),
-      daily: this.mapDaily(forecastPeriods)
+      daily: this.mapDaily(forecastPeriods, supplemental)
     };
+  }
+
+  async resolveLocation(input) {
+    const query = input.trim();
+    if (!query) return DEFAULT_LOCATION;
+    if (/^\d{5}$/.test(query)) return this.resolveZip(query);
+    return this.resolvePlace(query);
+  }
+
+  async getAirQuality(location) {
+    const airNow = await this.getAirNowQuality(location);
+    if (airNow) return airNow;
+    return this.getOpenMeteoAirQuality(location);
+  }
+
+  async getAirNowQuality(location) {
+    const apiKey = localStorage.getItem(AIRNOW_KEY_STORAGE_KEY);
+    if (!apiKey) return null;
+
+    try {
+      const data = await this.fetchJson(airNowUrl(location, apiKey));
+      const bestReading = Array.isArray(data)
+        ? data.filter((item) => Number.isFinite(Number(item.AQI))).sort((a, b) => Number(b.AQI) - Number(a.AQI))[0]
+        : null;
+      if (!bestReading) return null;
+      const value = Math.round(Number(bestReading.AQI));
+      return {
+        value,
+        category: bestReading.Category?.Name || this.airQualityCategory(value),
+        tone: this.airQualityTone(value),
+        source: "AirNow"
+      };
+    } catch (error) {
+      console.warn("AirNow air quality unavailable.", error);
+      return null;
+    }
+  }
+
+  async getOpenMeteoAirQuality(location) {
+    try {
+      const data = await this.fetchJson(airQualityUrl(location));
+      const value = Math.round(data.current?.us_aqi);
+      if (!Number.isFinite(value)) return null;
+      return {
+        value,
+        category: this.airQualityCategory(value),
+        tone: this.airQualityTone(value),
+        source: "Open-Meteo"
+      };
+    } catch (error) {
+      console.warn("Open-Meteo air quality unavailable.", error);
+      return null;
+    }
+  }
+
+  async getSupplementalWeather(location) {
+    const [sun, uvIndex, openMeteo] = await Promise.all([
+      this.getSunData(location),
+      this.getUvIndex(location),
+      this.getOpenMeteoWeather(location)
+    ]);
+
+    return {
+      ...openMeteo,
+      uvIndex: uvIndex ?? openMeteo?.uvIndex ?? null,
+      sunrise: sun?.sunrise || openMeteo?.sunrise || null,
+      sunset: sun?.sunset || openMeteo?.sunset || null
+    };
+  }
+
+  async getSunData(location) {
+    try {
+      const data = await this.fetchJson(sunUrl(location));
+      return {
+        sunrise: this.formatSunTime(data.sunrise),
+        sunset: this.formatSunTime(data.sunset)
+      };
+    } catch (error) {
+      console.warn("Sunrise and sunset unavailable.", error);
+      return null;
+    }
+  }
+
+  async getUvIndex(location) {
+    const epaUv = await this.getEpaUvIndex(location);
+    if (epaUv !== null) return epaUv;
+    return null;
+  }
+
+  async getEpaUvIndex(location) {
+    if (!location.zip && (!location.city || !location.state)) return null;
+
+    try {
+      const data = await this.fetchJson(epaUvUrl(location));
+      const rows = Array.isArray(data) ? data : data?.Results || [];
+      const firstValue = rows.map((row) => Number(row.UV_VALUE ?? row.UV_INDEX ?? row.UVI)).find(Number.isFinite);
+      return Number.isFinite(firstValue) ? firstValue : null;
+    } catch (error) {
+      console.warn("EPA UV unavailable.", error);
+      return null;
+    }
+  }
+
+  async getOpenMeteoWeather(location) {
+    try {
+      const data = await this.fetchJson(openMeteoForecastUrl(location));
+      const current = data.current || {};
+      const daily = data.daily || {};
+      const hourly = data.hourly || {};
+      return {
+        temperature: this.numberOrNull(current.temperature_2m),
+        humidity: this.numberOrNull(current.relative_humidity_2m),
+        dewPoint: this.numberOrNull(current.dew_point_2m),
+        feelsLike: this.numberOrNull(current.apparent_temperature),
+        precipitationAmount: this.numberOrNull(current.precipitation),
+        rain: this.numberOrNull(current.rain),
+        showers: this.numberOrNull(current.showers),
+        snowfall: this.numberOrNull(current.snowfall),
+        pressure: this.numberOrNull(current.pressure_msl),
+        windSpeed: this.numberOrNull(current.wind_speed_10m),
+        windDirection: this.numberOrNull(current.wind_direction_10m),
+        windGusts: this.numberOrNull(current.wind_gusts_10m),
+        precipChance: this.numberOrNull(hourly.precipitation_probability?.[0]),
+        visibility: this.numberOrNull(hourly.visibility?.[0]),
+        high: this.numberOrNull(daily.temperature_2m_max?.[0]),
+        low: this.numberOrNull(daily.temperature_2m_min?.[0]),
+        dailyPrecipAmount: this.numberOrNull(daily.precipitation_sum?.[0]),
+        dailyPrecipAmounts: (daily.precipitation_sum || []).map((value) => this.numberOrNull(value)),
+        dailyHighs: (daily.temperature_2m_max || []).map((value) => this.numberOrNull(value)),
+        dailyLows: (daily.temperature_2m_min || []).map((value) => this.numberOrNull(value)),
+        uvIndex: this.numberOrNull(daily.uv_index_max?.[0]),
+        sunrise: this.formatSunTime(daily.sunrise?.[0]),
+        sunset: this.formatSunTime(daily.sunset?.[0])
+      };
+    } catch (error) {
+      console.warn("Open-Meteo supplemental weather unavailable.", error);
+      return null;
+    }
+  }
+
+  async resolveZip(zip) {
+    const data = await this.fetchJson(`https://api.zippopotam.us/us/${zip}`);
+    const place = data.places?.[0];
+    if (!place) throw new Error("ZIP code not found.");
+    return {
+      label: `${place["place name"]}, ${place["state abbreviation"]}`,
+      query: zip,
+      zip,
+      city: place["place name"],
+      state: place["state abbreviation"],
+      lat: Number(place.latitude).toFixed(4),
+      lon: Number(place.longitude).toFixed(4)
+    };
+  }
+
+  async resolvePlace(query) {
+    const data = await this.fetchJson(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&countrycodes=us&q=${encodeURIComponent(query)}`);
+    const place = data?.[0];
+    if (!place) throw new Error("Location not found.");
+    const labelParts = place.display_name.split(",").map((part) => part.trim());
+    const city = place.address?.city || place.address?.town || place.address?.village || labelParts[0] || query;
+    const state = this.stateAbbreviation(place.address?.state || labelParts.find((part) => this.stateAbbreviation(part)));
+    return {
+      label: state ? `${city}, ${state}` : this.shortLocationLabel(labelParts, query),
+      query,
+      city,
+      state,
+      lat: Number(place.lat).toFixed(4),
+      lon: Number(place.lon).toFixed(4)
+    };
+  }
+
+  shortLocationLabel(parts, fallback) {
+    if (parts.length >= 3) return `${parts[0]}, ${parts[2]}`;
+    return fallback;
+  }
+
+  stateAbbreviation(value = "") {
+    const states = {
+      Alabama: "AL", Alaska: "AK", Arizona: "AZ", Arkansas: "AR", California: "CA", Colorado: "CO", Connecticut: "CT", Delaware: "DE", Florida: "FL", Georgia: "GA",
+      Hawaii: "HI", Idaho: "ID", Illinois: "IL", Indiana: "IN", Iowa: "IA", Kansas: "KS", Kentucky: "KY", Louisiana: "LA", Maine: "ME", Maryland: "MD",
+      Massachusetts: "MA", Michigan: "MI", Minnesota: "MN", Mississippi: "MS", Missouri: "MO", Montana: "MT", Nebraska: "NE", Nevada: "NV", "New Hampshire": "NH",
+      "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY", "North Carolina": "NC", "North Dakota": "ND", Ohio: "OH", Oklahoma: "OK", Oregon: "OR",
+      Pennsylvania: "PA", "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD", Tennessee: "TN", Texas: "TX", Utah: "UT", Vermont: "VT",
+      Virginia: "VA", Washington: "WA", "West Virginia": "WV", Wisconsin: "WI", Wyoming: "WY", "District of Columbia": "DC"
+    };
+    const trimmed = String(value).trim();
+    if (/^[A-Z]{2}$/.test(trimmed)) return trimmed;
+    return states[trimmed] || "";
   }
 
   async getLatestObservation(stationsUrl) {
@@ -123,62 +281,92 @@ class WeatherService {
   }
 
   async fetchJson(url) {
-    const response = await fetch(url, { headers: { Accept: "application/geo+json" } });
+    const response = await fetch(url, { headers: { Accept: "application/json, application/geo+json" } });
     if (!response.ok) throw new Error(`Weather request failed: ${response.status}`);
     return response.json();
   }
 
-  mapCurrent(period, forecastPeriods, observation) {
-    const temp = period?.temperature ?? this.seedData.current.temperature;
-    const todayHigh = forecastPeriods.find((item) => item.isDaytime)?.temperature ?? temp;
-    const tonightLow = forecastPeriods.find((item) => !item.isDaytime)?.temperature ?? this.seedData.current.low;
+  mapCurrent(period, forecastPeriods, observation, supplemental) {
+    const temp = period?.temperature ?? supplemental?.temperature ?? null;
+    const todayHigh = forecastPeriods.find((item) => item.isDaytime)?.temperature ?? supplemental?.high ?? temp;
+    const tonightLow = forecastPeriods.find((item) => !item.isDaytime)?.temperature ?? supplemental?.low ?? null;
     const feelsLike = this.readTemperature(observation?.properties?.heatIndex?.value)
       || this.readTemperature(observation?.properties?.windChill?.value)
+      || supplemental?.feelsLike
       || temp;
 
     return {
       temperature: temp,
       icon: this.iconForForecast(period?.shortForecast, period?.isDaytime),
-      condition: period?.shortForecast || this.seedData.current.condition,
+      condition: period?.shortForecast || "Current conditions",
       feelsLike,
       high: todayHigh,
       low: tonightLow
     };
   }
 
-  mapSummaryStats(current, period, observation, precipitation) {
-    const airQuality = this.seedSummary("Air Quality");
+  mapSummaryStats(current, period, observation, precipitation, airQuality, supplemental) {
+    const airQualityValue = airQuality ? `${airQuality.value} ${airQuality.category}` : "0 Good";
+    const windValue = `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim()
+      || this.formatOpenMeteoWind(supplemental)
+      || "0 mph";
 
     return [
-      { label: "High/Low", value: `${current.high}\u00B0 / ${current.low}\u00B0` },
-      { label: "Humidity", value: this.readPercent(observation?.properties?.relativeHumidity?.value, this.seedSummaryValue("Humidity")) },
-      { label: "Wind", value: `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || this.seedSummaryValue("Wind") },
+      { label: "High/Low", value: `${this.formatMaybeTemp(current.high)} / ${this.formatMaybeTemp(current.low)}` },
+      { label: "Humidity", value: this.readPercent(this.firstNumber(observation?.properties?.relativeHumidity?.value, supplemental?.humidity)) },
+      { label: "Wind", value: windValue },
       { label: "Precipitation", value: precipitation.active ? `${precipitation.type} ${precipitation.current}` : "None" },
-      { label: "Air Quality", value: airQuality?.value || "Good", tone: airQuality?.tone }
+      { label: "Air Quality", value: airQualityValue, tone: airQuality?.tone }
     ];
   }
 
-  mapDetails(period, observation) {
+  airQualityCategory(value) {
+    if (value <= 50) return "Good";
+    if (value <= 100) return "Moderate";
+    if (value <= 150) return "Unhealthy for Sensitive Groups";
+    if (value <= 200) return "Unhealthy";
+    if (value <= 300) return "Very Unhealthy";
+    return "Hazardous";
+  }
+
+  airQualityTone(value) {
+    if (value <= 100) return "";
+    return "warning";
+  }
+
+  mapDetails(period, observation, precipitation, supplemental) {
     return [
-      { icon: "rain-chance.svg", label: "Chance Rain", value: this.precipChance(period) },
-      { icon: "humidity.svg", label: "Humidity", value: this.readPercent(observation?.properties?.relativeHumidity?.value, this.seedDetailValue("Humidity")) },
-      { icon: "dew.svg", label: "Dew Point", value: this.readTemperatureLabel(observation?.properties?.dewpoint?.value, this.seedDetailValue("Dew Point")) },
-      { icon: "uv.svg", label: "UV Index", value: this.seedDetailValue("UV Index") },
-      { icon: "visibility.svg", label: "Visibility", value: this.readDistance(observation?.properties?.visibility?.value, this.seedDetailValue("Visibility")) },
-      { icon: "pressure.svg", label: "Pressure", value: this.readPressure(observation?.properties?.barometricPressure?.value, this.seedDetailValue("Pressure")) }
+      { icon: "rain-chance.svg", label: "Precip Chance", value: this.precipChance(period, supplemental) },
+      { icon: "weather-rain.svg", label: "Precip Amount", value: precipitation?.today?.replace(" today", "") || "0.00 in" },
+      { icon: "humidity.svg", label: "Humidity", value: this.readPercent(this.firstNumber(observation?.properties?.relativeHumidity?.value, supplemental?.humidity)) },
+      { icon: "dew.svg", label: "Dew Point", value: this.readTemperatureLabel(observation?.properties?.dewpoint?.value, supplemental?.dewPoint) },
+      { icon: "uv.svg", label: "UV Index", value: this.formatUvIndex(supplemental?.uvIndex) },
+      { icon: "visibility.svg", label: "Visibility", value: this.readDistance(this.firstNumber(observation?.properties?.visibility?.value, supplemental?.visibility)) },
+      { icon: "pressure.svg", label: "Pressure", value: this.readPressureWithFallback(observation?.properties?.barometricPressure?.value, supplemental?.pressure) },
+      { icon: "sunrise.svg", label: "Sunrise / Sunset", value: `${supplemental?.sunrise || "--"} / ${supplemental?.sunset || "--"}`, type: "sun", sunrise: supplemental?.sunrise || "--", sunset: supplemental?.sunset || "--" }
     ];
+  }
+
+  formatUvIndex(value) {
+    if (!Number.isFinite(value)) return "0 Low";
+    const rounded = Math.round(value);
+    if (rounded <= 2) return `${rounded} Low`;
+    if (rounded <= 5) return `${rounded} Moderate`;
+    if (rounded <= 7) return `${rounded} High`;
+    if (rounded <= 10) return `${rounded} Very High`;
+    return `${rounded} Extreme`;
   }
 
   mapNarrative(period, forecastPeriods) {
     const matchingPeriod = forecastPeriods.find((item) => item.isDaytime === period?.isDaytime) || forecastPeriods[0];
-    return matchingPeriod?.detailedForecast || period?.detailedForecast || period?.shortForecast || this.seedData.narrative;
+    return matchingPeriod?.detailedForecast || period?.detailedForecast || period?.shortForecast || "Current conditions are updating.";
   }
 
-  mapPrecipitation(currentPeriod, hourlyPeriods) {
-    const chance = this.precipValue(currentPeriod);
+  mapPrecipitation(currentPeriod, hourlyPeriods, supplemental) {
+    const chance = this.precipValue(currentPeriod, supplemental);
     const wetHours = hourlyPeriods.slice(0, 6).filter((period) => this.precipValue(period) > 0);
     const type = this.precipType(currentPeriod?.shortForecast || wetHours[0]?.shortForecast);
-    const expectedAmount = this.expectedPrecipAmount(hourlyPeriods);
+    const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
     const active = expectedAmount >= 0.15;
 
     return {
@@ -188,7 +376,7 @@ class WeatherService {
       summary: active ? `${type} totals may reach ${expectedAmount.toFixed(2)} in based on the latest forecast.` : "No significant precipitation expected.",
       current: active ? `${chance}% now` : "0% now",
       nextHour: `${this.precipValue(hourlyPeriods[1])}% next hour`,
-      today: `${expectedAmount.toFixed(2)} in today`,
+      today: expectedAmount > 0 ? `${expectedAmount.toFixed(2)} in today` : "",
       timeline: this.nextHourPrecipTimeline(hourlyPeriods),
       note: this.precipNote(hourlyPeriods)
     };
@@ -237,30 +425,30 @@ class WeatherService {
     }));
   }
 
-  mapDaily(periods) {
+  mapDaily(periods, supplemental) {
     const days = [];
 
     for (let index = 0; index < periods.length && days.length < 7; index += 1) {
       const dayPeriod = periods[index];
       if (!dayPeriod.isDaytime) continue;
       const nightPeriod = periods.slice(index + 1).find((period) => !period.isDaytime);
-      days.push(this.buildDailyForecast(dayPeriod, nightPeriod));
+      days.push(this.buildDailyForecast(dayPeriod, nightPeriod, supplemental, days.length));
     }
 
     const todayLabel = this.currentCentralDayLabel();
     if (days.length && days[0].day !== todayLabel) {
-      days.unshift(this.buildTodayCarryover(periods[0], todayLabel));
+      days.unshift(this.buildTodayCarryover(periods[0], todayLabel, supplemental));
     }
 
-    return days.length ? days.slice(0, 7) : this.clone(this.seedData.daily);
+    return days.slice(0, 7);
   }
 
-  buildDailyForecast(dayPeriod, nightPeriod) {
-    const low = nightPeriod?.temperature ?? dayPeriod.temperature;
-    const high = dayPeriod.temperature;
+  buildDailyForecast(dayPeriod, nightPeriod, supplemental, dayIndex) {
+    const low = nightPeriod?.temperature ?? supplemental?.dailyLows?.[dayIndex] ?? dayPeriod.temperature;
+    const high = dayPeriod.temperature ?? supplemental?.dailyHighs?.[dayIndex];
     const precip = Math.max(this.precipValue(dayPeriod), this.precipValue(nightPeriod));
     const text = `${dayPeriod.detailedForecast || ""} ${nightPeriod?.detailedForecast || ""}`;
-    const fallbackDay = this.seedDay(this.dayLabel(dayPeriod.startTime));
+    const precipAmount = this.precipAmountFromText(text) || this.formatInches(supplemental?.dailyPrecipAmounts?.[dayIndex]);
 
     return {
       day: this.dayLabel(dayPeriod.startTime),
@@ -269,53 +457,48 @@ class WeatherService {
       high,
       low,
       precip: precip > 0 ? `${precip}%` : "0%",
-      precipAmount: this.precipAmountFromText(text, fallbackDay),
+      precipAmount,
       range: this.rangeWidth(low, high),
       details: {
         story: [
           { icon: this.iconForForecast(dayPeriod.shortForecast, true), title: this.dayTitle(dayPeriod.startTime), text: dayPeriod.detailedForecast || dayPeriod.shortForecast },
-          { icon: this.iconForForecast(nightPeriod?.shortForecast, false), title: this.nightTitle(dayPeriod.startTime), text: nightPeriod?.detailedForecast || fallbackDay.details.story[1].text }
+          { icon: this.iconForForecast(nightPeriod?.shortForecast, false), title: this.nightTitle(dayPeriod.startTime), text: nightPeriod?.detailedForecast || "Night forecast is updating." }
         ],
-        metrics: this.dayMetrics(low, high, precip, text, fallbackDay)
+        metrics: this.dayMetrics(low, high, precip, text, precipAmount)
       }
     };
   }
 
-  buildTodayCarryover(period, todayLabel) {
-    const fallbackDay = this.seedDay(todayLabel);
-    const low = fallbackDay.low ?? this.seedData.current.low;
-    const high = fallbackDay.high ?? this.seedData.current.high;
-    const precip = this.precipValue(period) || Number((fallbackDay.precip || "0").replace("%", ""));
-    const text = period?.detailedForecast || fallbackDay.details.story[1].text;
+  buildTodayCarryover(period, todayLabel, supplemental) {
+    const temp = period?.temperature ?? null;
+    const precip = this.precipValue(period);
+    const text = period?.detailedForecast || period?.shortForecast || "Tonight forecast is updating.";
+    const precipAmount = this.precipAmountFromText(text) || this.formatInches(supplemental?.dailyPrecipAmounts?.[0]);
 
     return {
-      ...fallbackDay,
       day: todayLabel,
-      icon: this.iconForForecast(period?.shortForecast || fallbackDay.condition, false),
-      condition: period?.shortForecast || fallbackDay.condition,
-      high,
-      low,
+      icon: this.iconForForecast(period?.shortForecast, false),
+      condition: period?.shortForecast || "Tonight",
+      high: temp,
+      low: temp,
       precip: precip > 0 ? `${precip}%` : "0%",
-      precipAmount: this.precipAmountFromText(text, fallbackDay),
-      range: this.rangeWidth(low, high),
+      precipAmount,
+      range: this.rangeWidth(temp, temp),
       details: {
         story: [
-          fallbackDay.details.story[0],
-          { icon: this.iconForForecast(period?.shortForecast || fallbackDay.condition, false), title: "Tonight", text }
+          { icon: this.iconForForecast(period?.shortForecast, false), title: "Tonight", text }
         ],
-        metrics: this.dayMetrics(low, high, precip, text, fallbackDay)
+        metrics: this.dayMetrics(temp, temp, precip, text, precipAmount)
       }
     };
   }
 
-  dayMetrics(low, high, precip, text, fallbackDay) {
+  dayMetrics(low, high, precip, text, precipAmount) {
     return [
-      { label: "Temperature", value: `${low} - ${high}\u00B0` },
-      { label: "Feels Like", value: this.feelsLikeFromText(text, low, high, fallbackDay) },
+      { label: "Temperature", value: `${this.formatMaybeTemp(low)} - ${this.formatMaybeTemp(high)}` },
+      { label: "Feels Like", value: this.feelsLikeFromText(text, low, high) },
       { label: "Precip Chance", value: precip > 0 ? `${precip}%` : "0%" },
-      { label: "Precip Amount", value: this.precipAmountFromText(text, fallbackDay) },
-      { label: "Sunrise", value: this.seedMetricValue(fallbackDay, "Sunrise") },
-      { label: "Sunset", value: this.seedMetricValue(fallbackDay, "Sunset") }
+      { label: "Precip Amount", value: precipAmount || "0.00 in" }
     ];
   }
 
@@ -334,12 +517,14 @@ class WeatherService {
     return "Rain";
   }
 
-  precipValue(period) {
-    return Math.round(period?.probabilityOfPrecipitation?.value || 0);
+  precipValue(period, supplemental) {
+    const nwsValue = period?.probabilityOfPrecipitation?.value;
+    const fallbackValue = supplemental?.precipChance;
+    return Math.round(this.firstNumber(nwsValue, fallbackValue) || 0);
   }
 
-  precipChance(period) {
-    const chance = this.precipValue(period);
+  precipChance(period, supplemental) {
+    const chance = this.precipValue(period, supplemental);
     return chance > 0 ? `${chance}%` : "None";
   }
 
@@ -350,10 +535,13 @@ class WeatherService {
     return `Rain starting in ${firstWetIndex * 10} min., stopping ${Math.max(10, (lastWetIndex - firstWetIndex + 1) * 10)} min. later.`;
   }
 
-  expectedPrecipAmount(periods) {
+  expectedPrecipAmount(periods, supplemental) {
     const text = periods.slice(0, 12).map((period) => period.detailedForecast || period.shortForecast || "").join(" ");
-    const parsed = this.precipAmountNumber(this.precipAmountFromText(text, this.seedData.daily[0]));
+    const parsed = this.precipAmountNumber(this.precipAmountFromText(text));
     if (parsed > 0) return parsed;
+
+    const fallbackAmount = this.firstNumber(supplemental?.dailyPrecipAmount, supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
+    if (fallbackAmount > 0) return fallbackAmount;
 
     const maxChance = Math.max(...periods.slice(0, 12).map((period) => this.precipValue(period)), 0);
     if (maxChance >= 70) return 0.18;
@@ -367,6 +555,15 @@ class WeatherService {
     if (value.includes("<")) return Number(value.match(/\d+(?:\.\d+)?/)?.[0] || 0);
     const numbers = value.match(/\d+(?:\.\d+)?/g) || [];
     return numbers.length ? Math.max(...numbers.map(Number)) : 0;
+  }
+
+  numberOrNull(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  firstNumber(...values) {
+    return values.map((value) => this.numberOrNull(value)).find((value) => value !== null) ?? null;
   }
 
   nextHourPrecipTimeline(periods) {
@@ -389,58 +586,76 @@ class WeatherService {
     return Math.round((value * 9) / 5 + 32);
   }
 
-  readTemperatureLabel(value, fallback = "57\u00B0") {
+  readTemperatureLabel(value, fallbackFahrenheit) {
     const temp = this.readTemperature(value);
-    return temp === null ? fallback : `${temp}\u00B0`;
+    const fallback = this.numberOrNull(fallbackFahrenheit);
+    return temp === null ? this.formatMaybeTemp(fallback) : `${temp}\u00B0`;
   }
 
-  readPercent(value, fallback = "0%") {
-    return typeof value === "number" ? `${Math.round(value)}%` : fallback;
+  readPercent(value) {
+    return typeof value === "number" ? `${Math.round(value)}%` : "0%";
   }
 
-  readDistance(value, fallback = "10 mi") {
-    if (typeof value !== "number") return fallback;
+  readDistance(value) {
+    if (typeof value !== "number") return "0 mi";
     return `${Math.round(value / 1609.344)} mi`;
   }
 
-  readPressure(value, fallback = "29.92 in") {
-    if (typeof value !== "number") return fallback;
+  readPressure(value) {
+    if (typeof value !== "number") return "0.00 in";
     return `${(value / 3386.389).toFixed(2)} in`;
   }
 
-  seedSummary(label) {
-    return this.seedData.summaryStats.find((item) => item.label === label);
+  readPressureWithFallback(nwsPascalValue, fallbackHpaValue) {
+    if (typeof nwsPascalValue === "number") return this.readPressure(nwsPascalValue);
+    const hpa = this.numberOrNull(fallbackHpaValue);
+    if (hpa === null) return "0.00 in";
+    return `${(hpa * 0.029529983).toFixed(2)} in`;
   }
 
-  seedSummaryValue(label) {
-    return this.seedSummary(label)?.value || "Current";
+  formatMaybeTemp(value) {
+    return Number.isFinite(Number(value)) ? `${value}\u00B0` : "--";
   }
 
-  seedDetailValue(label) {
-    return this.seedData.details.find((item) => item.label === label)?.value || "Current";
+  formatInches(value) {
+    const amount = this.numberOrNull(value);
+    if (amount === null || amount <= 0) return "";
+    return amount < 0.01 ? "<0.01 in" : `${amount.toFixed(2)} in`;
   }
 
-  seedDay(day) {
-    return this.seedData.daily.find((item) => item.day === day) || this.seedData.daily[0];
+  formatOpenMeteoWind(supplemental) {
+    const speed = this.numberOrNull(supplemental?.windSpeed);
+    if (speed === null) return "";
+    return `${this.windDirectionLabel(supplemental?.windDirection)} ${Math.round(speed)} mph`.trim();
   }
 
-  seedMetricValue(day, label) {
-    return day.details.metrics.find((item) => item.label === label)?.value || this.seedData.daily[0].details.metrics.find((item) => item.label === label)?.value;
+  windDirectionLabel(degrees) {
+    const value = this.numberOrNull(degrees);
+    if (value === null) return "";
+    const labels = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+    return labels[Math.round(value / 22.5) % 16];
   }
 
-  feelsLikeFromText(text, low, high, fallbackDay) {
+  formatSunTime(value) {
+    if (!value) return "--";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "--";
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  feelsLikeFromText(text, low, high) {
     const heatIndex = text.match(/heat index values? as high as (\d+)/i)?.[1];
     if (heatIndex) return `Up to ${heatIndex}\u00B0`;
-    return this.seedMetricValue(fallbackDay, "Feels Like") || `${low} - ${high}\u00B0`;
+    return `${this.formatMaybeTemp(low)} - ${this.formatMaybeTemp(high)}`;
   }
 
-  precipAmountFromText(text, fallbackDay) {
+  precipAmountFromText(text) {
     if (/less than a tenth/i.test(text)) return "<0.10 in";
     const amount = text.match(/(\d+(?:\.\d+)?)\s*(?:to|-)\s*(\d+(?:\.\d+)?)\s*in/i);
     if (amount) return `${amount[1]} - ${amount[2]} in`;
     const single = text.match(/(\d+(?:\.\d+)?)\s*in/i);
     if (single) return `${single[1]} in`;
-    return this.seedMetricValue(fallbackDay, "Precip Amount") || "0.00 in";
+    return "";
   }
 
   currentCentralDayLabel() {
@@ -463,17 +678,45 @@ class WeatherService {
     return Math.min(100, Math.max(35, Math.round(((high - low) / 28) * 100)));
   }
 }
-const weatherService = new WeatherService(placeholderWeather);
+const weatherService = new WeatherService();
 const elements = {};
-const formatTemp = (value) => `${value}\u00B0`;
+const formatTemp = (value) => Number.isFinite(Number(value)) ? `${value}\u00B0` : "--";
 const iconSrc = (icon) => `${ICON_PATH}${icon}`;
+let currentLocation = loadSavedLocation();
+
+function loadSavedLocation() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCATION_STORAGE_KEY)) || DEFAULT_LOCATION;
+  } catch {
+    return DEFAULT_LOCATION;
+  }
+}
+
+function saveLocation(location) {
+  currentLocation = location;
+  localStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(location));
+  setText("locationLabel", location.label);
+}
+
+function windyUrl(location) {
+  return `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=in&metricTemp=%C2%B0F&metricWind=mph&zoom=8&overlay=radar&product=radar&level=surface&lat=${location.lat}&lon=${location.lon}&detailLat=${location.lat}&detailLon=${location.lon}&marker=true&message=true`;
+}
+
+function updateRadarLocation(location) {
+  const src = windyUrl(location);
+  if (elements.radarPreviewFrame?.src !== src) elements.radarPreviewFrame.src = src;
+  if (elements.radarFrame?.src !== src) elements.radarFrame.src = src;
+  setText("radarPreviewLabel", `Windy radar centered on ${location.label}`);
+  setText("radarPanelLabel", `Clean live radar view for ${location.label}.`);
+}
 
 function cacheElements() {
   [
-    "currentWeatherTitle", "currentClock", "currentTemp", "currentIcon",
+    "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus",
+    "currentCard", "currentTemp", "currentIcon",
     "condition", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "dailyForecast",
-    "expandedWeather", "detailsToggle", "currentNarrative", "radarToggle", "radarPanel", "radarClose", "radarTime"
+    "expandedWeather", "currentNarrative", "radarPreviewCard", "radarPreviewFrame", "radarFrame", "radarPreviewLabel", "radarPanelLabel", "radarToggle", "radarPanel", "radarClose", "radarTime"
   ].forEach((id) => {
     elements[id] = document.getElementById(id);
   });
@@ -490,12 +733,11 @@ function setIcon(element, icon, label = "") {
 
 function updateClock() {
   const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  setText("currentClock", time);
+  setText("appClock", time);
   setText("radarTime", time);
 }
 
 function renderCurrentWeather(data) {
-  setText("currentWeatherTitle", `Current Weather in ${data.location.city}`);
   setText("currentTemp", formatTemp(data.current.temperature));
   setIcon(elements.currentIcon, data.current.icon, data.current.condition);
   setText("condition", data.current.condition);
@@ -524,13 +766,20 @@ function renderDetails(details) {
     const icon = document.createElement("img");
     const label = document.createElement("span");
     const value = document.createElement("span");
-    card.className = "quick-item";
+    card.className = item.type === "sun" ? "quick-item sun-card" : "quick-item";
     label.className = "quick-label";
     value.className = "quick-value";
     setIcon(icon, item.icon, "");
     label.textContent = item.label;
-    value.textContent = item.value;
-    card.append(icon, label, value);
+    if (item.type === "sun") {
+      const times = document.createElement("div");
+      times.className = "sun-times";
+      times.innerHTML = `<div><span>Sunrise</span><strong>${item.sunrise}</strong></div><div><span>Sunset</span><strong>${item.sunset}</strong></div>`;
+      card.append(icon, label, times);
+    } else {
+      value.textContent = item.value;
+      card.append(icon, label, value);
+    }
     elements.detailsGrid.appendChild(card);
   });
 }
@@ -671,7 +920,8 @@ function renderDaily(days) {
   elements.dailyForecast.replaceChildren();
   const weekLow = Math.min(...days.map((day) => Number(day.low)).filter(Number.isFinite));
   const weekHigh = Math.max(...days.map((day) => Number(day.high)).filter(Number.isFinite));
-  const weekRange = Math.max(1, weekHigh - weekLow);
+  const hasRange = Number.isFinite(weekLow) && Number.isFinite(weekHigh);
+  const weekRange = hasRange ? Math.max(1, weekHigh - weekLow) : 1;
 
   days.forEach((day, index) => {
     const card = document.createElement("article");
@@ -715,8 +965,8 @@ function renderDaily(days) {
     iconLine.append(icon, precip);
     iconGroup.append(iconLine, condition);
     low.textContent = formatTemp(day.low);
-    const rangeStart = Math.max(0, Math.min(100, ((day.low - weekLow) / weekRange) * 100));
-    const rangeWidth = Math.max(6, Math.min(100 - rangeStart, ((day.high - day.low) / weekRange) * 100));
+    const rangeStart = hasRange ? Math.max(0, Math.min(100, ((day.low - weekLow) / weekRange) * 100)) : 0;
+    const rangeWidth = hasRange ? Math.max(6, Math.min(100 - rangeStart, ((day.high - day.low) / weekRange) * 100)) : 0;
     track.style.setProperty("--range-start", `${rangeStart}%`);
     track.style.setProperty("--range-width", `${rangeWidth}%`);
     high.textContent = formatTemp(day.high);
@@ -769,7 +1019,7 @@ function renderDailyDetailPanel(details, index) {
 }
 
 function dailyPrecipText(day) {
-  const amount = day.precipAmount && day.precipAmount !== "0.00 in" ? day.precipAmount : "";
+  const amount = day.precipAmount || "";
   const percent = shouldShowPrecipPercent(day.precip) || amount ? day.precip : "";
   return [percent, amount].filter(Boolean).join(" / ");
 }
@@ -780,11 +1030,65 @@ function togglePanel(button, panel, force) {
   button.setAttribute("aria-expanded", String(shouldOpen));
 }
 
+function toggleRadar(force) {
+  const shouldOpen = typeof force === "boolean" ? force : elements.radarPanel.hidden;
+  togglePanel(elements.radarToggle, elements.radarPanel, shouldOpen);
+  elements.radarPanel.classList.toggle("is-fullscreen", shouldOpen);
+  document.body.classList.toggle("radar-open", shouldOpen);
+  elements.radarClose.textContent = shouldOpen ? "Back" : "Close";
+}
+
+function toggleSettings(force) {
+  const shouldOpen = typeof force === "boolean" ? force : elements.settingsPanel.hidden;
+  elements.settingsPanel.hidden = !shouldOpen;
+  elements.settingsToggle.setAttribute("aria-expanded", String(shouldOpen));
+  if (shouldOpen) {
+    elements.locationInput.value = currentLocation.query || currentLocation.label;
+    elements.locationStatus.textContent = "";
+    elements.locationInput.focus();
+  }
+}
+
+async function handleLocationSubmit(event) {
+  event.preventDefault();
+  const query = elements.locationInput.value.trim();
+  if (!query) return;
+  elements.locationStatus.textContent = "Updating location...";
+
+  try {
+    const location = await weatherService.resolveLocation(query);
+    saveLocation(location);
+    toggleSettings(false);
+    await renderDashboard();
+  } catch (error) {
+    console.warn("Location update failed.", error);
+    elements.locationStatus.textContent = "I couldn't find that location. Try a ZIP code or City, State.";
+  }
+}
+
 function bindInteractions() {
-  elements.detailsToggle.addEventListener("click", () => togglePanel(elements.detailsToggle, elements.expandedWeather));
-  elements.radarToggle.addEventListener("click", () => togglePanel(elements.radarToggle, elements.radarPanel));
-  elements.radarClose.addEventListener("click", () => togglePanel(elements.radarToggle, elements.radarPanel, false));
+  elements.currentCard.addEventListener("click", (event) => {
+    if (event.target.closest("#hourlyForecast")) return;
+    togglePanel(elements.currentCard, elements.expandedWeather);
+  });
+  elements.currentCard.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    togglePanel(elements.currentCard, elements.expandedWeather);
+  });
+  elements.radarPreviewCard.addEventListener("click", () => toggleRadar(true));
+  elements.radarToggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleRadar(true);
+  });
+  elements.radarClose.addEventListener("click", () => toggleRadar(false));
   elements.alertCard.addEventListener("click", () => togglePanel(elements.alertCard, elements.alertDetails));
+  elements.settingsToggle.addEventListener("click", () => toggleSettings());
+  elements.settingsClose.addEventListener("click", () => toggleSettings(false));
+  elements.settingsPanel.addEventListener("click", (event) => {
+    if (event.target === elements.settingsPanel) toggleSettings(false);
+  });
+  elements.locationForm.addEventListener("submit", handleLocationSubmit);
 }
 
 function animateTemperatureRefresh() {
@@ -793,7 +1097,9 @@ function animateTemperatureRefresh() {
 }
 
 async function renderDashboard() {
-  const data = await weatherService.getWeather();
+  setText("locationLabel", currentLocation.label);
+  updateRadarLocation(currentLocation);
+  const data = await weatherService.getWeather(currentLocation);
   renderCurrentWeather(data);
   renderSummaryStats(data.summaryStats);
   renderDetails(data.details);
