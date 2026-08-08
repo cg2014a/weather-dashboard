@@ -1,0 +1,120 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#EAF4FF" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="SkyStation" />
+    <meta name="description" content="SkyStation personal weather dashboard for Olathe, Kansas." />
+    <title>SkyStation Weather Dashboard</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.svg" />
+    <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="weather-page" aria-label="SkyStation weather dashboard">
+      <section class="weather-shell">
+        <p class="app-kicker">SkyStation Weather</p>
+        <section class="current-card" aria-label="Current weather">
+          <div class="card-title-row">
+            <h2 id="currentWeatherTitle">Current Weather in Olathe, Kansas</h2>
+            <time id="currentClock">--:--</time>
+          </div>
+          <div class="current-content">
+            <div class="current-left">
+              <div class="temp-row">
+                <img class="hero-icon" id="currentIcon" src="icons/weather-sunny.svg" alt="Mostly Sunny" />
+                <div>
+                  <span class="current-temp" id="currentTemp">72&deg;</span>
+                  <p class="realfeel">Feels Like <span id="feelsLike">72&deg;</span></p>
+                </div>
+              </div>
+              <p class="condition" id="condition">Mostly Sunny</p>
+              <button class="details-toggle" id="detailsToggle" type="button" aria-expanded="false" aria-controls="expandedWeather">
+                More Details <span aria-hidden="true"></span>
+              </button>
+            </div>
+            <div class="current-stats" id="currentStats" aria-label="Current condition summary"></div>
+          </div>
+          <p class="current-narrative" id="currentNarrative">Warm and sunny now, with humidity building through the afternoon.</p>
+          <section class="expanded-weather" id="expandedWeather" hidden>
+            <section class="quick-grid" id="detailsGrid" aria-label="Weather details"></section>
+            <section class="forecast-card hourly-panel" aria-labelledby="hourly-title">
+              <div class="section-heading">
+                <h2 id="hourly-title">Hourly Forecast</h2>
+                <span>Next 12 hours</span>
+              </div>
+              <div class="hourly-strip" id="hourlyForecast" tabindex="0"></div>
+            </section>
+          </section>
+        </section>
+
+        <button class="alert-card" id="alertCard" type="button" aria-label="Weather alert details" aria-expanded="false" hidden>
+          <img src="icons/alert.svg" alt="" />
+          <div>
+            <h2 id="alertHeadline">Weather Alert</h2>
+            <p id="alertBody"></p>
+            <div class="alert-details" id="alertDetails" hidden></div>
+          </div>
+          <span class="alert-chevron" aria-hidden="true">⌄</span>
+        </button>
+
+        <section class="precip-card" id="precipCard" aria-label="Precipitation" hidden>
+          <div class="precip-card-main">
+            <img id="precipIcon" src="icons/rain-chance.svg" alt="" />
+            <div>
+              <h2>Precipitation</h2>
+              <p id="precipSummary">No precipitation expected.</p>
+            </div>
+          </div>
+          <div class="precip-amounts" id="precipAmounts"></div>
+        </section>
+
+        <section class="forecast-card seven-day" aria-labelledby="daily-title">
+          <div class="section-heading daily-heading">
+            <div>
+              <h2 id="daily-title">7-Day Forecast</h2>
+              <span>Tap a day for details</span>
+            </div>
+          </div>
+          <div class="daily-list" id="dailyForecast"></div>
+        </section>
+
+        <section class="radar-bubble" aria-label="Weather radar">
+          <div class="radar-preview-card">
+            <div class="radar-preview-heading">
+              <div>
+                <h2>Weather Radar</h2>
+                <p>Windy radar centered on Olathe/KC</p>
+              </div>
+              <button id="radarToggle" type="button" aria-expanded="false" aria-controls="radarPanel">Open</button>
+            </div>
+            <iframe class="radar-preview-frame" title="Windy radar preview centered on Olathe and Kansas City" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=in&metricTemp=%C2%B0F&metricWind=mph&zoom=8&overlay=radar&product=radar&level=surface&lat=38.881&lon=-94.819&detailLat=38.881&detailLon=-94.819&marker=true&message=true"></iframe>
+          </div>
+          <div class="radar-panel" id="radarPanel" hidden>
+            <div class="radar-heading">
+              <div>
+                <h2>Weather Radar - Kansas City Region</h2>
+                <p>Clean live radar view from Windy.</p>
+              </div>
+              <button id="radarClose" type="button" aria-label="Close radar">Close</button>
+            </div>
+            <iframe class="radar-frame" title="Expanded Windy radar centered on Olathe and Kansas City" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=in&metricTemp=%C2%B0F&metricWind=mph&zoom=8&overlay=radar&product=radar&level=surface&lat=38.881&lon=-94.819&detailLat=38.881&detailLon=-94.819&marker=true&message=true"></iframe>
+          </div>
+        </section>
+        <footer class="source-footer">Weather source: National Weather Service · Radar: Windy</footer>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
+
+
+
+
+
+
+
