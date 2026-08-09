@@ -86,7 +86,8 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .current-temp.is-refreshing { opacity: .45; transform: translateY(3px); }
 .realfeel { margin: 8px 0 0; font-size: 1.02rem; }
 .condition { margin: 24px 0 10px; font-size: 1rem; font-weight: 800; }
-.allergen-alerts { display: flex; justify-content: flex-end; align-items: center; flex-wrap: nowrap; gap: 14px; min-height: 24px; margin: -4px 20px 14px; overflow: hidden; }
+.allergen-alerts { display: flex; justify-content: flex-start; align-items: center; flex-wrap: nowrap; gap: 14px; min-height: 24px; margin: -4px 20px 14px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.allergen-alerts::-webkit-scrollbar { display: none; }
 .allergen-alerts[hidden] { display: none; }
 .allergen-badge { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 4px; min-width: 0; min-height: 20px; padding: 0; border: 0; border-radius: 0; background: transparent; color: #5f6368; box-shadow: none; font-size: .72rem; line-height: 1; font-weight: 650; animation: badgeIn 220ms ease both; }
 .allergen-badge img { width: 15px; height: 15px; flex: 0 0 auto; opacity: .72; }
@@ -116,21 +117,22 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .precip-timeline { display: grid; gap: 3px; min-width: 0; }
 .precip-chart-title { color: #0b7ff3; font-size: .62rem; font-weight: 850; line-height: 1.1; text-align: left; padding-left: 30px; }
 .precip-chart-title::before { content: none; }
-.precip-plot { display: grid; grid-template-columns: 30px minmax(0, 1fr); min-width: 0; padding-top: 0; }
-.precip-scale { display: grid; grid-template-rows: repeat(3, 1fr); padding-top: 3px; color: var(--muted); font-size: .5rem; font-weight: 850; line-height: 1; text-transform: uppercase; }
-.precip-bars { display: grid; grid-column: 2; grid-template-columns: repeat(21, minmax(0, 1fr)); align-items: end; justify-items: center; gap: 0; height: 48px; padding: 0 1px; border-bottom: 1px solid #dfe4ea; background-image: linear-gradient(to right, rgba(26,115,232,.06) 1px, transparent 1px); background-size: calc(100% / 20) 100%; }
-.precip-bars span { display: block; width: 4px; height: var(--bar-height, 0%); min-height: 0; border-radius: 999px 999px 2px 2px; background: #1687f7; box-shadow: 0 1px 0 rgba(22,135,247,.18); }
+.precip-plot { display: grid; grid-template-columns: 39px minmax(0, 1fr); min-width: 0; padding-top: 0; }
+.precip-scale { display: grid; grid-template-rows: repeat(4, 1fr); padding-top: 3px; color: var(--muted); font-size: .46rem; font-weight: 850; line-height: 1; text-transform: uppercase; }
+.precip-bars { display: flex; grid-column: 2; align-items: end; justify-content: space-between; gap: 0; height: 54px; padding: 0 1px; border-bottom: 1px solid #dfe4ea; background-image: linear-gradient(to right, rgba(26,115,232,.06) 1px, transparent 1px); background-size: calc(100% / 20) 100%; }
+.precip-bars span { display: block; flex: 0 0 4px; width: 4px; height: 0; min-height: 0; border-radius: 999px 999px 2px 2px; background: #1687f7; box-shadow: 0 1px 0 rgba(22,135,247,.18); }
 .precip-time-labels { display: grid; grid-column: 2; grid-template-columns: repeat(6, minmax(21px, 1fr)); margin-top: 2px; color: var(--muted); font-size: .5rem; font-weight: 750; text-align: center; }
 .precip-time-labels span:first-child { text-align: left; }
 .precip-time-labels span:last-child { text-align: right; }
 
-.alert-card { display: grid; grid-template-columns: 32px 1fr 20px; gap: 12px; align-items: center; width: 100%; padding: 12px 14px; border-color: rgba(217, 48, 37, .25); background: #fce8e6; color: #5f160f; font: inherit; text-align: left; cursor: pointer; animation-name: alertSlide; }
+.alert-card { display: grid; grid-template-columns: 32px minmax(0, 1fr) 20px; gap: 12px; align-items: center; width: 100%; min-width: 0; max-width: 100%; overflow: hidden; padding: 12px 14px; border-color: rgba(217, 48, 37, .25); background: #fce8e6; color: #5f160f; font: inherit; text-align: left; cursor: pointer; animation-name: alertSlide; }
 .alert-card[hidden] { display: none; }
 .alert-card img { width: 30px; }
+.alert-card > div { min-width: 0; max-width: 100%; overflow: hidden; }
 .alert-card h2 { margin-bottom: 2px; font-size: .92rem; }
 .alert-card p { margin-bottom: 0; color: #6f2118; font-size: .82rem; line-height: 1.35; }
 .alert-card:focus-visible { outline: 3px solid rgba(217, 48, 37, .28); outline-offset: 3px; }
-.alert-details { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(95, 22, 15, .18); color: #4f150f; font-size: .78rem; line-height: 1.4; white-space: pre-line; animation: expandIn .22s ease both; }
+.alert-details { max-width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(95, 22, 15, .18); color: #4f150f; font-size: .78rem; line-height: 1.4; white-space: pre-line; overflow-wrap: anywhere; word-break: break-word; animation: expandIn .22s ease both; }
 .alert-details[hidden] { display: none; }
 .alert-chevron { justify-self: end; align-self: start; color: #7e251b; font-size: 1.2rem; line-height: 1; transition: transform .2s ease; }
 .alert-card[aria-expanded="true"] .alert-chevron { transform: rotate(180deg); }
@@ -255,6 +257,15 @@ body.pollen-open { overflow: hidden; }
 .location-entry button { border: 0; border-radius: 999px; background: #eef3f8; color: var(--text); font-weight: 800; }
 .settings-heading button { height: 30px; padding: 0 12px; }
 .settings-card label { display: block; margin-bottom: 6px; color: var(--muted); font-size: .76rem; font-weight: 800; }
+.location-toggle { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; margin: 2px 0 14px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 14px; background: #f7faff; color: var(--text) !important; cursor: pointer; }
+.location-toggle strong { display: block; color: var(--text); font-size: .86rem; line-height: 1.2; }
+.location-toggle small { display: block; margin-top: 2px; color: var(--muted); font-size: .7rem; font-weight: 650; line-height: 1.25; }
+.location-toggle input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+.toggle-track { position: relative; width: 46px; height: 28px; border-radius: 999px; background: #ccd6e0; transition: background 160ms ease; }
+.toggle-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: white; box-shadow: 0 2px 6px rgba(60, 64, 67, .22); transition: transform 160ms ease; }
+.location-toggle input:checked + .toggle-track { background: var(--blue); }
+.location-toggle input:checked + .toggle-track::after { transform: translateX(18px); }
+.location-toggle input:focus-visible + .toggle-track { outline: 2px solid rgba(26, 115, 232, .35); outline-offset: 2px; }
 .location-entry { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .location-entry input { min-width: 0; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; font: inherit; }
 .location-entry button { height: 42px; padding: 0 14px; background: var(--blue); color: white; }
@@ -282,7 +293,7 @@ body.pollen-open { overflow: hidden; }
   .current-temp { font-size: clamp(3.7rem, 16vw, 4.6rem); }
   .realfeel { font-size: .82rem; }
   .condition { margin-top: 12px; margin-bottom: 9px; }
-  .allergen-alerts { justify-content: flex-start; min-height: 21px; margin: -4px 14px 12px; gap: 9px; overflow-x: auto; scrollbar-width: none; }
+  .allergen-alerts { justify-content: flex-start; min-height: 21px; margin: -4px 14px 12px; gap: 9px; }
   .allergen-alerts::-webkit-scrollbar { display: none; }
   .allergen-badge { font-size: .62rem; }
   .allergen-badge strong { font-size: .66rem; }
@@ -303,9 +314,10 @@ body.pollen-open { overflow: hidden; }
   .precip-card-main img { width: 24px; height: 24px; }
   .precip-card h2 { font-size: .88rem; }
   .precip-card p { font-size: .68rem; }
-  .precip-plot { grid-template-columns: 27px minmax(0, 1fr); }
-  .precip-bars { height: 42px; }
-  .precip-bars span { width: 3px; }
+  .precip-plot { grid-template-columns: 36px minmax(0, 1fr); }
+  .precip-bars { height: 48px; }
+  .precip-bars span { flex-basis: 3px; width: 3px; }
+  .alert-card { grid-template-columns: 28px minmax(0, 1fr) 16px; gap: 8px; padding: 11px 10px; }
   .day-metrics { grid-template-columns: 1fr; }
   .pollen-card { min-height: 88px; padding: 11px; }
 }

@@ -1,4 +1,4 @@
-const CACHE_NAME = "skystation-v1-34";
+const CACHE_NAME = "skystation-v1-38";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -49,12 +49,18 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        if (event.request.url.startsWith(self.location.origin)) {
+        if (event.request.url.startsWith(self.location.origin) && response.ok && response.type === "basic") {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          caches.open(CACHE_NAME)
+            .then((cache) => cache.put(event.request, copy))
+            .catch(() => {});
         }
         return response;
       })
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./offline.html")))
+      .catch(() => caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        if (event.request.mode === "navigate") return caches.match("./offline.html");
+        return Response.error();
+      }))
   );
 });

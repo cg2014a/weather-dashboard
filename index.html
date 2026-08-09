@@ -131,6 +131,14 @@
           <h2>Change Location</h2>
           <button id="settingsClose" type="button" aria-label="Close settings">Close</button>
         </div>
+        <label class="location-toggle">
+          <span>
+            <strong>Use Current Location</strong>
+            <small>Automatically detect this device when the dashboard loads or refreshes.</small>
+          </span>
+          <input id="autoLocationToggle" type="checkbox" checked />
+          <span class="toggle-track" aria-hidden="true"></span>
+        </label>
         <label for="locationInput">ZIP or City, State</label>
         <div class="location-entry">
           <input id="locationInput" name="location" type="text" autocomplete="postal-code" placeholder="66062 or Kansas City, MO" />
