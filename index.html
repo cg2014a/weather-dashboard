@@ -35,10 +35,10 @@
                 </div>
               </div>
               <p class="condition" id="condition">Loading weather</p>
-              <p class="now-alert" id="nowAlert">Checking nearby weather.</p>
             </div>
             <div class="current-stats" id="currentStats" aria-label="Current condition summary"></div>
           </div>
+          <div class="allergen-alerts" id="allergenAlerts" aria-label="High pollen and allergen alerts" hidden></div>
           <section class="current-outlook" aria-label="Weather outlook">
             <img id="outlookIcon" src="icons/weather-cloud.svg" alt="" />
             <div>
@@ -116,7 +116,7 @@
           <div class="radar-heading">
             <div>
               <h2>Pollen & Allergens</h2>
-              <p id="pollenSummary">Current allergen levels for the selected location.</p>
+              <p id="pollenSummary" hidden></p>
             </div>
             <button id="pollenClose" type="button" aria-label="Close pollen details">Back</button>
           </div>

@@ -25,7 +25,7 @@ const emptyWeather = {
   },
   summaryStats: [],
   narrative: "Weather data is loading.",
-  precipitation: { active: false, type: "Rain", icon: "weather-rain.svg", summary: "No significant precipitation expected.", current: "0% now", nextHour: "0% next hour", today: "", timeline: [], note: "No precipitation expected soon." },
+  precipitation: { active: false, type: "Rain", icon: "weather-rain.svg", summary: "No significant precipitation expected.", current: "0% now", nextHour: "0% next hour", amount: "0 in", today: "", timeline: [], note: "No precipitation expected soon." },
   details: [],
   alert: null,
   hourly: [],
@@ -68,14 +68,14 @@ class WeatherService {
     const basePollen = airQuality?.pollen || supplemental?.pollen || this.emptyPollen();
     const enrichedSupplemental = {
       ...supplemental,
-      airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "0 Good",
+      airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "Checking",
       pollen: basePollen
     };
     enrichedSupplemental.pollen = {
       ...basePollen,
       health: this.mapHealthRisks(enrichedSupplemental, airQuality)
     };
-    const current = this.mapCurrent(currentPeriod, forecastPeriods, observation, enrichedSupplemental);
+    const current = this.mapCurrent(currentPeriod, forecastPeriods, hourlyPeriods, observation, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental);
 
     return {
@@ -311,7 +311,7 @@ class WeatherService {
     return response.json();
   }
 
-  mapCurrent(period, forecastPeriods, observation, supplemental) {
+  mapCurrent(period, forecastPeriods, hourlyPeriods, observation, supplemental) {
     const temp = period?.temperature ?? supplemental?.temperature ?? null;
     const todayHigh = forecastPeriods.find((item) => item.isDaytime)?.temperature ?? supplemental?.high ?? temp;
     const tonightLow = forecastPeriods.find((item) => !item.isDaytime)?.temperature ?? supplemental?.low ?? null;
@@ -326,8 +326,7 @@ class WeatherService {
       condition: period?.shortForecast || "Current conditions",
       feelsLike,
       high: todayHigh,
-      low: tonightLow,
-      nowAlert: this.nowAlert(period, forecastPeriods, feelsLike)
+      low: tonightLow
     };
   }
 
@@ -335,16 +334,28 @@ class WeatherService {
     const windValue = `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim()
       || this.formatOpenMeteoWind(supplemental)
       || "0 mph";
+    const humidity = this.readHumidity(observation, supplemental, period);
 
     return [
       { icon: "real-feel.svg", label: "High/Low", value: `${this.formatMaybeTemp(current.high)} / ${this.formatMaybeTemp(current.low)}` },
-      { icon: "humidity.svg", label: "Humidity", value: this.readPercent(this.firstNumber(observation?.properties?.relativeHumidity?.value, supplemental?.humidity)) },
+      { icon: "humidity.svg", label: "Humidity", value: humidity },
       { icon: "wind.svg", label: "Wind", value: windValue },
       { icon: "rain-chance.svg", label: "Precipitation", value: this.precipChance(period, supplemental) }
     ];
   }
 
   mapPollen(current = {}) {
+    const hasPollenData = [
+      "alder_pollen",
+      "birch_pollen",
+      "olive_pollen",
+      "ragweed_pollen",
+      "grass_pollen",
+      "mugwort_pollen",
+      "dust"
+    ].some((field) => this.numberOrNull(current?.[field]) !== null);
+    if (!hasPollenData) return this.emptyPollen();
+
     const treeValue = Math.max(
       this.numberOrNull(current?.alder_pollen) || 0,
       this.numberOrNull(current?.birch_pollen) || 0,
@@ -369,16 +380,17 @@ class WeatherService {
   }
 
   emptyPollen() {
+    const emptyDetail = (label, icon = "pollen.svg") => ({ label, value: null, category: "Checking", icon });
     return {
-      value: 0,
-      category: "Low",
+      value: null,
+      category: "Checking",
       details: [
-        this.allergenDetail("Tree Pollen", 0, "pollen"),
-        this.allergenDetail("Ragweed Pollen", 0, "pollen"),
-        this.allergenDetail("Grass Pollen", 0, "pollen"),
-        this.allergenDetail("Mold", 0, "pollen"),
-        this.allergenDetail("Dust & Dander", 0, "dust"),
-        this.allergenDetail("Weed Pollen", 0, "pollen")
+        emptyDetail("Tree Pollen"),
+        emptyDetail("Ragweed Pollen"),
+        emptyDetail("Grass Pollen"),
+        emptyDetail("Mold"),
+        emptyDetail("Dust & Dander", "aqi.svg"),
+        emptyDetail("Weed Pollen")
       ]
     };
   }
@@ -467,15 +479,15 @@ class WeatherService {
   }
 
   mapDetails(period, observation, precipitation, supplemental) {
-    const humidity = this.readPercent(this.firstNumber(observation?.properties?.relativeHumidity?.value, supplemental?.humidity));
+    const humidity = this.readHumidity(observation, supplemental, period);
     const dewPoint = this.readTemperatureLabel(observation?.properties?.dewpoint?.value, supplemental?.dewPoint);
     const wind = `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || this.formatOpenMeteoWind(supplemental) || "0 mph";
     const pollen = supplemental?.pollen || this.emptyPollen();
     return [
-      { icon: "rain-chance.svg", label: "Precipitation", value: `${this.precipChance(period, supplemental)} / ${precipitation?.today?.replace(" today", "") || "0.00 in"}` },
+      { icon: "rain-chance.svg", label: "Precipitation", value: `${this.precipChance(period, supplemental)} / ${this.currentPrecipAmount(period, precipitation, supplemental)}` },
       { icon: "humidity.svg", label: "Humidity / Dew Point", value: `${humidity} / ${dewPoint}` },
       { icon: "wind.svg", label: "Wind / Gust", value: `${wind} / ${this.readWindGust(period, supplemental)}` },
-      { icon: "aqi.svg", label: "Air Quality", value: supplemental?.airQualityLabel || "0 Good" },
+      { icon: "aqi.svg", label: "Air Quality", value: supplemental?.airQualityLabel || "Checking" },
       { icon: "pollen.svg", label: "Pollen", value: pollen.category, type: "pollen", details: pollen.details, health: pollen.health },
       { icon: "uv.svg", label: "UV Index", value: this.formatUvIndex(supplemental?.uvIndex) },
       { icon: "visibility.svg", label: "Visibility", value: this.readDistance(this.firstNumber(observation?.properties?.visibility?.value, supplemental?.visibility)) },
@@ -485,39 +497,13 @@ class WeatherService {
   }
 
   formatUvIndex(value) {
-    if (!Number.isFinite(value)) return "0 Low";
+    if (!Number.isFinite(value)) return "Low";
     const rounded = Math.round(value);
     if (rounded <= 2) return `${rounded} Low`;
     if (rounded <= 5) return `${rounded} Moderate`;
     if (rounded <= 7) return `${rounded} High`;
     if (rounded <= 10) return `${rounded} Very High`;
     return `${rounded} Extreme`;
-  }
-
-  nowAlert(period, forecastPeriods, feelsLike) {
-    const now = Date.now();
-    const upcomingPeriods = forecastPeriods.filter((item) => this.periodIsCurrentOrFuture(item, now));
-    const nextWetPeriod = upcomingPeriods.find((item) => this.precipValue(item) >= 40 || /thunder|storm/i.test(item.shortForecast || ""));
-    const gust = Number(this.readWindGust(period).match(/\d+/)?.[0] || 0);
-    if (Number(feelsLike) >= 101) return `Heat index near ${Math.round(feelsLike)}\u00B0 based on the latest forecast.`;
-    if (nextWetPeriod) {
-      const start = new Date(nextWetPeriod.startTime).getTime();
-      const time = Number.isFinite(start) && start <= now
-        ? "now"
-        : `around ${new Date(nextWetPeriod.startTime).toLocaleTimeString([], { hour: "numeric" }).replace(" ", "")}`;
-      const type = /thunder|storm/i.test(nextWetPeriod.shortForecast || "") ? "Thunderstorms" : "Rain";
-      return `${type} possible ${time}.`;
-    }
-    if (gust >= 30) return `Wind gusts may reach ${gust} mph.`;
-    return "";
-  }
-
-  periodIsCurrentOrFuture(period, now = Date.now()) {
-    const start = new Date(period?.startTime).getTime();
-    const end = new Date(period?.endTime).getTime();
-    if (Number.isFinite(end)) return end > now;
-    if (Number.isFinite(start)) return start >= now;
-    return false;
   }
 
   mapNarrative(period, forecastPeriods) {
@@ -548,6 +534,7 @@ class WeatherService {
       summary: active ? summary : "No significant precipitation expected.",
       current: active ? `${chance}% now` : "0% now",
       nextHour: `${this.precipValue(hourlyPeriods[1], supplemental)}% next hour`,
+      amount: this.precipAmountLabel(expectedAmount, hourlyPeriods, supplemental),
       today: expectedAmount > 0 ? `${expectedAmount.toFixed(2)} in today` : "",
       timeline: this.nextHourPrecipTimeline(hourlyPeriods),
       note: this.precipNote(hourlyPeriods)
@@ -674,13 +661,13 @@ class WeatherService {
     return [
       { label: "Feels Like", value: this.feelsLikeFromText(text, low, high) },
       { label: "Precip Chance", value: precip > 0 ? `${precip}%` : "0%" },
-      { label: "Precip Amount", value: precipAmount || "0.00 in" },
+      { label: "Precip Amount", value: precipAmount || "0 in" },
       { label: "Wind", value: this.windFromText(combinedText) || this.formatOpenMeteoWind(supplemental) || "0 mph" },
       { label: "Gusts", value: this.gustFromText(combinedText) || this.readWindGust(dayPeriod, supplemental) },
       { label: "Humidity", value: this.readPercent(supplemental?.humidity) },
       { label: "UV", value: this.formatUvIndex(uv) },
-      { label: "Air Quality", value: supplemental?.airQualityLabel || "0 Good" },
-      { label: "Pollen", value: supplemental?.pollen?.category || "Low" }
+      { label: "Air Quality Now", value: supplemental?.airQualityLabel || "Checking" },
+      { label: "Pollen Now", value: supplemental?.pollen?.category || "Checking" }
     ];
   }
 
@@ -738,11 +725,23 @@ class WeatherService {
     const fallbackAmount = this.firstNumber(supplemental?.dailyPrecipAmount, supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
     if (fallbackAmount > 0) return fallbackAmount;
 
-    const maxChance = Math.max(...periods.slice(0, 12).map((period) => this.precipValue(period)), 0);
-    if (maxChance >= 70) return 0.18;
-    if (maxChance >= 50) return 0.12;
-    if (maxChance >= 30) return 0.06;
     return 0;
+  }
+
+  precipAmountLabel(amount, periods, supplemental) {
+    if (amount > 0) return amount < 0.01 ? "<0.01 in" : `${amount.toFixed(2)} in`;
+    const text = periods.slice(0, 12).map((period) => period.detailedForecast || period.shortForecast || "").join(" ");
+    const textAmount = this.precipAmountFromText(text);
+    if (textAmount) return textAmount;
+    const fallbackAmount = this.firstNumber(supplemental?.dailyPrecipAmount, supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
+    if (fallbackAmount > 0) return this.formatInches(fallbackAmount);
+    return "0 in";
+  }
+
+  currentPrecipAmount(period, precipitation, supplemental) {
+    const chance = this.precipValue(period, supplemental);
+    if (precipitation?.active || chance > 0) return precipitation?.amount || "Trace";
+    return "0 in";
   }
 
   precipAmountNumber(value) {
@@ -788,23 +787,32 @@ class WeatherService {
   }
 
   readPercent(value) {
-    return typeof value === "number" ? `${Math.round(value)}%` : "0%";
+    return typeof value === "number" ? `${Math.round(value)}%` : "--";
+  }
+
+  readHumidity(observation, supplemental, period) {
+    const nwsHumidity = this.numberOrNull(observation?.properties?.relativeHumidity?.value);
+    const fallbackHumidity = this.numberOrNull(supplemental?.humidity);
+    const validHumidity = [nwsHumidity, fallbackHumidity].find((value) => Number.isFinite(value) && value > 0 && value <= 100);
+    if (Number.isFinite(validHumidity)) return `${Math.round(validHumidity)}%`;
+    if (/rain|showers|thunder|storm|drizzle|fog/i.test(period?.shortForecast || "")) return "High";
+    return "--";
   }
 
   readDistance(value) {
-    if (typeof value !== "number") return "0 mi";
+    if (typeof value !== "number") return "--";
     return `${Math.round(value / 1609.344)} mi`;
   }
 
   readPressure(value) {
-    if (typeof value !== "number") return "0.00 in";
+    if (typeof value !== "number") return "--";
     return `${(value / 3386.389).toFixed(2)} in`;
   }
 
   readPressureWithFallback(nwsPascalValue, fallbackHpaValue) {
     if (typeof nwsPascalValue === "number") return this.readPressure(nwsPascalValue);
     const hpa = this.numberOrNull(fallbackHpaValue);
-    if (hpa === null) return "0.00 in";
+    if (hpa === null) return "--";
     return `${(hpa * 0.029529983).toFixed(2)} in`;
   }
 
@@ -827,7 +835,7 @@ class WeatherService {
   }
 
   formatMaybeTemp(value) {
-    return Number.isFinite(Number(value)) ? `${value}\u00B0` : "--";
+    return Number.isFinite(Number(value)) ? `${Math.round(Number(value))}\u00B0` : "--";
   }
 
   formatInches(value) {
@@ -857,8 +865,15 @@ class WeatherService {
   }
 
   feelsLikeFromText(text, low, high) {
-    const heatIndex = text.match(/heat index values? as high as (\d+)/i)?.[1];
-    if (heatIndex) return `Up to ${heatIndex}\u00B0`;
+    const heatIndex = text.match(/heat index values? (?:as high as|up to|near) (-?\d+)/i)?.[1];
+    if (heatIndex) return `Up to ${Math.round(Number(heatIndex))}\u00B0`;
+    const windChill = text.match(/wind chill values? (?:as low as|down to|near) (-?\d+)/i)?.[1];
+    if (windChill) return `Down to ${Math.round(Number(windChill))}\u00B0`;
+    const windChillRange = text.match(/wind chill values? (?:between|from) (-?\d+)\s*(?:and|to|-)\s*(-?\d+)/i);
+    if (windChillRange) {
+      const lowChill = Math.min(Number(windChillRange[1]), Number(windChillRange[2]));
+      return `Down to ${Math.round(lowChill)}\u00B0`;
+    }
     return `${this.formatMaybeTemp(low)} - ${this.formatMaybeTemp(high)}`;
   }
 
@@ -893,7 +908,7 @@ class WeatherService {
 }
 const weatherService = new WeatherService();
 const elements = {};
-const formatTemp = (value) => Number.isFinite(Number(value)) ? `${value}\u00B0` : "--";
+const formatTemp = (value) => Number.isFinite(Number(value)) ? `${Math.round(Number(value))}\u00B0` : "--";
 const iconSrc = (icon) => `${ICON_PATH}${icon}`;
 let currentLocation = loadSavedLocation();
 let currentPollenDetails = [];
@@ -928,8 +943,8 @@ function updateRadarLocation(location) {
 function cacheElements() {
   [
     "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus",
-    "currentCard", "currentTemp", "currentIcon",
-    "condition", "nowAlert", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
+    "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
+    "condition", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "dailyForecast",
     "expandedWeather", "currentNarrative", "radarPreviewCard", "radarPreviewFrame", "radarFrame", "radarPreviewLabel", "radarPanelLabel", "radarToggle", "radarPanel", "radarClose", "radarTime",
     "pollenPanel", "pollenClose", "pollenList", "pollenSummary"
@@ -958,8 +973,6 @@ function renderCurrentWeather(data) {
   setIcon(elements.currentIcon, data.current.icon, data.current.condition);
   setIcon(elements.outlookIcon, data.current.icon, "");
   setText("condition", data.current.condition);
-  setText("nowAlert", data.current.nowAlert);
-  elements.nowAlert.hidden = !data.current.nowAlert;
   setText("feelsLike", formatTemp(data.current.feelsLike));
   setText("currentNarrative", data.narrative);
 }
@@ -1029,6 +1042,40 @@ function renderDetails(details) {
     }
     elements.detailsGrid.appendChild(card);
   });
+  renderAllergenAlerts(currentPollenDetails, currentHealthDetails);
+}
+
+function renderAllergenAlerts(pollenDetails = [], healthDetails = []) {
+  const highItems = [...pollenDetails, ...healthDetails]
+    .filter((item) => ["High", "Very High", "Extreme"].includes(item.category))
+    .slice(0, 3);
+
+  elements.allergenAlerts.replaceChildren();
+  elements.allergenAlerts.hidden = highItems.length === 0;
+  if (!highItems.length) return;
+
+  highItems.forEach((item) => {
+    const badge = document.createElement("span");
+    const icon = document.createElement("img");
+    const name = document.createElement("span");
+    const severity = document.createElement("strong");
+    badge.className = `allergen-badge ${item.category.toLowerCase().replace(/\s+/g, "-")}`;
+    badge.title = `${item.label}: ${item.category}`;
+    badge.setAttribute("aria-label", `${item.label}: ${item.category}`);
+    setIcon(icon, item.icon || "pollen.svg", "");
+    name.textContent = shortAllergenLabel(item.label);
+    severity.textContent = item.category;
+    badge.append(icon, name, severity);
+    elements.allergenAlerts.appendChild(badge);
+  });
+}
+
+function shortAllergenLabel(label = "") {
+  return label
+    .replace(" Pollen", "")
+    .replace("Dust & Dander", "Dander")
+    .replace("Sinus Pressure", "Sinus")
+    .replace("Common Cold", "Cold");
 }
 
 function renderPollenPanel() {
@@ -1049,26 +1096,22 @@ function renderPollenPanel() {
     { label: "Migraine", value: 0, category: "Low" },
     { label: "Asthma", value: 0, category: "Low" }
   ];
-  const peak = details.reduce((max, item) => Number(item.value) > Number(max.value) ? item : max, details[0]);
-  setText("pollenSummary", `${peak.label} is the highest current allergen at ${peak.category}.`);
 
   elements.pollenList.append(
-    renderPollenSection("Allergies", "How high are allergens today?", details),
-    renderPollenSection("Health", "How will the weather impact my health today?", health)
+    renderPollenSection("Allergies", details),
+    renderPollenSection("Health", health)
   );
 }
 
-function renderPollenSection(titleText, subtitleText, items) {
+function renderPollenSection(titleText, items) {
   const section = document.createElement("section");
   const title = document.createElement("h3");
-  const subtitle = document.createElement("p");
   const grid = document.createElement("div");
   section.className = "pollen-section";
   title.textContent = titleText;
-  subtitle.textContent = subtitleText;
   grid.className = "pollen-card-grid";
   items.forEach((item) => grid.appendChild(renderPollenCard(item)));
-  section.append(title, subtitle, grid);
+  section.append(title, grid);
   return section;
 }
 
@@ -1076,17 +1119,12 @@ function renderPollenCard(item) {
   const card = document.createElement("article");
   const icon = document.createElement("img");
   const label = document.createElement("strong");
-  const meter = document.createElement("span");
-  const fill = document.createElement("span");
   const value = document.createElement("span");
   card.className = `pollen-card ${item.category.toLowerCase().replace(/\s+/g, "-")}`;
-  meter.className = "pollen-meter";
   setIcon(icon, item.icon || "pollen.svg", "");
-  fill.style.setProperty("--pollen-width", `${Math.max(14, Math.min(100, Number(item.value) || 0))}%`);
   label.textContent = item.label;
   value.textContent = item.category;
-  meter.appendChild(fill);
-  card.append(icon, label, meter, value);
+  card.append(icon, label, value);
   return card;
 }
 
