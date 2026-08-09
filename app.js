@@ -1477,16 +1477,18 @@ function normalizeTimeline(values = []) {
     const chanceValue = typeof value === "object" ? value.chance : value;
     const amountValue = typeof value === "object" ? value.amount : null;
     const chance = Math.max(0, Math.min(100, Number(chanceValue) || 0));
-    const amount = Number.isFinite(Number(amountValue)) ? Math.max(0, Number(amountValue)) : null;
+    const amount = amountValue === null || amountValue === undefined || amountValue === ""
+      ? null
+      : Math.max(0, Number(amountValue));
     return {
       chance: chance < PRECIP_DISPLAY_THRESHOLD ? 0 : chance,
-      amount
+      amount: Number.isFinite(amount) ? amount : null
     };
   });
 }
 
 function precipBarHeight(value, index) {
-  if (value.amount !== null) return precipAmountBarHeight(value.amount, index);
+  if (value.amount !== null && value.amount >= 0.001) return precipAmountBarHeight(value.amount, index);
   if (value.chance < PRECIP_DISPLAY_THRESHOLD) return 0;
   const wave = Math.sin(index * 0.92) * 4 + Math.cos(index * 0.47) * 2;
   if (value.chance < 40) return Math.max(24, Math.min(44, value.chance + wave));
