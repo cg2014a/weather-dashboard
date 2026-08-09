@@ -928,14 +928,17 @@ function saveLocation(location) {
   setText("locationLabel", location.label);
 }
 
-function windyUrl(location) {
-  return `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=in&metricTemp=%C2%B0F&metricWind=mph&zoom=8&overlay=radar&product=radar&level=surface&lat=${location.lat}&lon=${location.lon}&detailLat=${location.lat}&detailLon=${location.lon}&marker=true&message=true`;
+function windyUrl(location, zoom = 9) {
+  const lat = Number(location.lat).toFixed(4);
+  const lon = Number(location.lon).toFixed(4);
+  return `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=true&marker=true&calendar=12&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&metricRain=in&radarRange=-1`;
 }
 
 function updateRadarLocation(location) {
-  const src = windyUrl(location);
-  if (elements.radarPreviewFrame?.src !== src) elements.radarPreviewFrame.src = src;
-  if (elements.radarFrame?.src !== src) elements.radarFrame.src = src;
+  const previewSrc = windyUrl(location, 9);
+  const fullSrc = windyUrl(location, 10);
+  if (elements.radarPreviewFrame?.getAttribute("src") !== previewSrc) elements.radarPreviewFrame.src = previewSrc;
+  if (elements.radarFrame?.getAttribute("src") !== fullSrc) elements.radarFrame.src = fullSrc;
   setText("radarPreviewLabel", `Windy radar centered on ${location.label}`);
   setText("radarPanelLabel", `Clean live radar view for ${location.label}.`);
 }
