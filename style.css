@@ -104,7 +104,15 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .stat-row span { color: #111; }
 .stat-label { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
 .stat-label img { width: 16px; height: 16px; flex: 0 0 auto; }
-.stat-row strong { font-size: 1rem; font-weight: 850; text-align: right; }
+.stat-value { display: grid; justify-items: end; gap: 1px; min-width: 0; text-align: right; }
+.stat-value.inline-status { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; }
+.stat-value strong { font-size: 1rem; font-weight: 850; text-align: right; }
+.stat-value small { color: var(--muted); font-size: .72rem; font-weight: 400; line-height: 1.12; white-space: nowrap; }
+.dew-status { display: inline-flex; align-items: center; min-height: 18px; padding: 2px 6px; border-radius: 999px; font-size: .68rem; font-weight: 650; line-height: 1; }
+.dew-status.comfortable { background: #dcfce7; color: #166534; }
+.dew-status.pleasant { background: #e0f2fe; color: #075985; }
+.dew-status.muggy { background: #fef3c7; color: #854d0e; }
+.dew-status.miserable { background: #fee2e2; color: #991b1b; }
 .stat-row.warning strong { color: var(--orange); }
 
 .precip-card { display: grid; grid-template-columns: minmax(112px, .88fr) minmax(170px, 1.45fr); align-items: center; gap: 12px; padding: 11px 12px; }
@@ -299,7 +307,8 @@ body.pollen-open { overflow: hidden; }
   .allergen-badge strong { font-size: .66rem; }
   .allergen-badge img { width: 13px; height: 13px; }
   .stat-row { min-height: 36px; gap: 8px; font-size: .78rem; }
-  .stat-row strong { font-size: .82rem; }
+  .stat-value strong { font-size: .82rem; }
+  .stat-value small { font-size: .68rem; }
   .daily-row { grid-template-columns: 34px minmax(128px,1.4fr) 36px minmax(42px,1fr) 36px; gap: 6px; font-size: .8rem; }
   .daily-icon-line { grid-template-columns: 26px minmax(0, auto); column-gap: 9px; }
   .daily-row img { width: 26px; height: 26px; }
