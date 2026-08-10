@@ -960,19 +960,21 @@ class WeatherService {
   dewPointComfortLabel(value) {
     const dewPoint = this.numberOrNull(value);
     if (dewPoint === null) return "";
-    if (dewPoint >= 72) return "Miserable";
+    if (dewPoint >= 70) return "Miserable";
     if (dewPoint >= 65) return "Muggy";
-    if (dewPoint >= 56) return "Pleasant";
-    return "Dry / Comfortable";
+    if (dewPoint >= 60) return "Sticky";
+    if (dewPoint >= 50) return "Pleasant";
+    return "Dry";
   }
 
   dewPointComfortTone(value) {
     const dewPoint = this.numberOrNull(value);
     if (dewPoint === null) return "";
-    if (dewPoint >= 72) return "miserable";
+    if (dewPoint >= 70) return "miserable";
     if (dewPoint >= 65) return "muggy";
-    if (dewPoint >= 56) return "pleasant";
-    return "comfortable";
+    if (dewPoint >= 60) return "sticky";
+    if (dewPoint >= 50) return "pleasant";
+    return "dry";
   }
 
   readDistance(value) {

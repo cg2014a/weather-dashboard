@@ -109,9 +109,10 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .stat-value strong { font-size: 1rem; font-weight: 850; text-align: right; }
 .stat-value small { color: var(--muted); font-size: .72rem; font-weight: 400; line-height: 1.12; white-space: nowrap; }
 .dew-status { display: inline-flex; align-items: center; min-height: 18px; padding: 2px 6px; border-radius: 999px; font-size: .68rem; font-weight: 650; line-height: 1; }
-.dew-status.comfortable { background: #dcfce7; color: #166534; }
-.dew-status.pleasant { background: #e0f2fe; color: #075985; }
-.dew-status.muggy { background: #fef3c7; color: #854d0e; }
+.dew-status.dry { background: #e0f2fe; color: #075985; }
+.dew-status.pleasant { background: #dcfce7; color: #166534; }
+.dew-status.sticky { background: #fef3c7; color: #854d0e; }
+.dew-status.muggy { background: #ffedd5; color: #c2410c; }
 .dew-status.miserable { background: #fee2e2; color: #991b1b; }
 .stat-row.warning strong { color: var(--orange); }
 
