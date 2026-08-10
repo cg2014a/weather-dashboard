@@ -460,10 +460,12 @@ class WeatherService {
       || this.formatOpenMeteoWind(supplemental)
       || "0 mph";
     const humidity = this.readHumidity(observation, supplemental, period);
+    const dewPoint = this.dewPointFahrenheit(observation, supplemental);
 
     return [
       { icon: "real-feel.svg", label: "High/Low", value: `${this.formatMaybeTemp(current.high)} / ${this.formatMaybeTemp(current.low)}` },
       { icon: "humidity.svg", label: "Humidity", value: humidity },
+      { icon: "dew.svg", label: "Dew Point", value: this.formatMaybeTemp(dewPoint), status: this.dewPointComfortLabel(dewPoint), statusTone: this.dewPointComfortTone(dewPoint) },
       { icon: "wind.svg", label: "Wind", value: windValue },
       { icon: "rain-chance.svg", label: "Precipitation", value: this.precipChance(period, supplemental) }
     ];
@@ -948,6 +950,31 @@ class WeatherService {
     return "--";
   }
 
+  dewPointFahrenheit(observation, supplemental) {
+    return this.firstNumber(
+      this.readTemperature(observation?.properties?.dewpoint?.value),
+      supplemental?.dewPoint
+    );
+  }
+
+  dewPointComfortLabel(value) {
+    const dewPoint = this.numberOrNull(value);
+    if (dewPoint === null) return "";
+    if (dewPoint >= 72) return "Miserable";
+    if (dewPoint >= 65) return "Muggy";
+    if (dewPoint >= 56) return "Pleasant";
+    return "Dry / Comfortable";
+  }
+
+  dewPointComfortTone(value) {
+    const dewPoint = this.numberOrNull(value);
+    if (dewPoint === null) return "";
+    if (dewPoint >= 72) return "miserable";
+    if (dewPoint >= 65) return "muggy";
+    if (dewPoint >= 56) return "pleasant";
+    return "comfortable";
+  }
+
   readDistance(value) {
     if (typeof value !== "number") return "--";
     return `${Math.round(value / 1609.344)} mi`;
@@ -1242,14 +1269,24 @@ function renderSummaryStats(stats) {
     const icon = document.createElement("img");
     const text = document.createElement("span");
     const label = document.createElement("span");
+    const valueWrap = document.createElement("span");
     const value = document.createElement("strong");
     row.className = item.tone ? `stat-row ${item.tone}` : "stat-row";
     text.className = "stat-label";
+    valueWrap.className = "stat-value";
+    if (item.status && !item.subvalue) valueWrap.classList.add("inline-status");
     setIcon(icon, item.icon || "weather-cloud.svg", "");
     label.textContent = item.label;
     value.textContent = item.value;
     text.append(icon, label);
-    row.append(text, value);
+    valueWrap.appendChild(value);
+    if (item.subvalue || item.status) {
+      const detail = document.createElement("small");
+      if (item.statusTone) detail.className = `dew-status ${item.statusTone}`;
+      detail.textContent = [item.subvalue, item.status].filter(Boolean).join(" • ");
+      valueWrap.appendChild(detail);
+    }
+    row.append(text, valueWrap);
     elements.currentStats.appendChild(row);
   });
 }
