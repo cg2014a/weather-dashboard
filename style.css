@@ -104,6 +104,8 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .stat-row span { color: #111; }
 .stat-label { display: inline-flex; align-items: center; gap: 7px; min-width: 0; color: #111 !important; font-size: inherit; font-weight: 400; line-height: normal; }
 .stat-label img { width: 16px; height: 16px; flex: 0 0 auto; }
+.stat-label-stack { display: grid; gap: 1px; min-width: 0; }
+.stat-sublabel { color: #111; font-size: inherit; font-weight: 400; line-height: 1.05; }
 .stat-value { display: grid; justify-items: end; gap: 1px; min-width: 0; text-align: right; }
 .stat-value.inline-status { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; }
 .stat-value.inline-detail { display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; }
@@ -176,6 +178,9 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
   cursor: pointer;
   animation: forecastIn 420ms ease both;
 }
+.daily-day-card.is-open { border-top: 1.5px solid #8da0b5; }
+.daily-day-card.is-open .daily-detail-panel { border-bottom: 1.5px solid #8da0b5; }
+.daily-row[aria-expanded="true"] { background: #f8fbff; }
 .daily-icon-group { display: grid; justify-items: start; gap: 1px; min-width: 0; }
 .daily-icon-line { display: inline-grid; grid-template-columns: 28px minmax(0, auto); align-items: center; column-gap: 10px; max-width: 100%; }
 .daily-row img { width: 28px; height: 28px; }
@@ -231,15 +236,23 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .sun-times strong { display: block; margin-top: 1px; color: var(--text); font-size: .66rem; line-height: 1; white-space: nowrap; }
 .quick-label { display: block; color: var(--muted); font-size: .64rem; font-weight: 700; line-height: 1.1; }
 .quick-value { display: block; margin-top: 3px; font-size: .86rem; font-weight: 820; line-height: 1.1; }
-.hourly-strip { display: grid; grid-auto-flow: column; grid-auto-columns: 66px; max-width: 100%; min-width: 0; gap: 8px; overflow-x: auto; padding: 2px 1px 10px; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: rgba(26,115,232,.38) rgba(232,238,246,.8); -webkit-overflow-scrolling: touch; }
-.hourly-strip::-webkit-scrollbar { height: 4px; }
-.hourly-strip::-webkit-scrollbar-track { background: rgba(232,238,246,.8); border-radius: 999px; }
-.hourly-strip::-webkit-scrollbar-thumb { background: rgba(26,115,232,.42); border-radius: 999px; }
-.hour-item { display: grid; justify-items: center; gap: 5px; min-height: 92px; padding: 8px 5px; border-radius: 14px; background: #f7fbff; scroll-snap-align: start; animation: forecastIn 420ms ease both; }
-.hour-item img { width: 27px; height: 27px; }
-.hour-time { color: var(--muted); font-size: .68rem; font-weight: 720; }
-.hour-temp { font-size: .9rem; font-weight: 850; }
-.precip { color: var(--blue); font-size: .64rem; font-weight: 720; }
+.hourly-strip { max-width: 100%; min-width: 0; overflow: hidden; padding: 2px 0 4px; }
+.hourly-empty { margin: 0; color: var(--muted); font-size: .82rem; }
+.hourly-chart { min-width: 0; animation: forecastIn 420ms ease both; }
+.hourly-bar-chart { position: relative; display: grid; grid-template-columns: repeat(var(--hour-count), minmax(0, 1fr)); align-items: end; min-height: 178px; padding: 12px 8px 10px; border-radius: 18px; background: #fff; box-shadow: inset 0 0 0 1px rgba(190, 204, 219, .72); }
+.hourly-column { position: relative; display: grid; grid-template-rows: 28px 22px 86px 16px 16px 18px; justify-items: center; min-width: 0; padding: 0 4px; }
+.hourly-column + .hourly-column { border-left: 1px solid rgba(141, 160, 181, .24); }
+.hourly-column-graph { position: relative; width: 100%; height: 86px; overflow: hidden; border-radius: 12px; background: linear-gradient(180deg, rgba(249, 171, 0, .12), rgba(26, 115, 232, .09)); }
+.hourly-temp-bar { position: absolute; left: 50%; top: var(--temp-top); width: min(38px, 76%); height: 14px; border: 2px solid #fff; border-radius: 999px; background: linear-gradient(90deg, #f9ab00, #f4c75b); box-shadow: 0 4px 9px rgba(37, 54, 74, .22); transform: translate(-50%, -50%); }
+.hourly-precip-layer { position: absolute; grid-column: 1 / -1; grid-row: 1 / -1; left: 8px; right: 8px; top: 62px; z-index: 2; height: 86px; pointer-events: none; }
+.hourly-precip-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.hourly-precip-connector { stroke: rgba(26, 115, 232, .76); stroke-width: 1.4; stroke-linecap: round; }
+.hourly-precip-dot { position: absolute; left: var(--precip-x); top: var(--precip-y); width: 6px; height: 6px; border: 1.5px solid #fff; border-radius: 999px; background: #1a73e8; box-shadow: 0 1px 3px rgba(37, 54, 74, .22); transform: translate(-50%, -50%); }
+.hourly-weather-icon { width: 26px; height: 26px; align-self: center; filter: drop-shadow(0 1px 2px rgba(37, 54, 74, .16)); }
+.hourly-temp-label { color: var(--text); font-size: .9rem; font-weight: 850; }
+.hourly-time-label { color: #3c4043; font-size: .76rem; font-weight: 650; white-space: nowrap; }
+.hourly-precip-label { color: var(--blue); font-size: .66rem; font-weight: 820; white-space: nowrap; }
+.hourly-wind-label { color: #147e8b; font-size: .64rem; font-weight: 780; white-space: nowrap; }
 
 .radar-bubble { display: grid; gap: 10px; }
 .radar-preview-card { display: grid; gap: 10px; padding: 12px; overflow: hidden; }
@@ -326,6 +339,7 @@ body.pollen-open { overflow: hidden; }
   .stat-row { min-height: 35px; gap: 7px; padding: 6px 8px; font-size: .78rem; }
   .stat-label { gap: 5px; font-size: inherit; }
   .stat-label img { width: 14px; height: 14px; }
+  .stat-label-stack { gap: 0; }
   .stat-value strong { font-size: .82rem; }
   .stat-value small { font-size: .68rem; }
   .precip-stat .stat-value small { font-size: .72rem; }
@@ -343,6 +357,16 @@ body.pollen-open { overflow: hidden; }
   .precip-card-main img { width: 24px; height: 24px; }
   .precip-card h2 { font-size: .88rem; }
   .precip-card p { font-size: .68rem; }
+  .hourly-bar-chart { min-height: 166px; padding: 10px 5px 8px; }
+  .hourly-column { grid-template-rows: 24px 19px 72px 15px 15px 16px; padding: 0 2px; }
+  .hourly-column-graph { height: 72px; }
+  .hourly-temp-bar { width: min(30px, 76%); height: 12px; }
+  .hourly-precip-layer { left: 5px; right: 5px; top: 53px; height: 72px; }
+  .hourly-weather-icon { width: 22px; height: 22px; }
+  .hourly-temp-label { font-size: .78rem; }
+  .hourly-time-label { font-size: .62rem; }
+  .hourly-precip-label { font-size: .56rem; }
+  .hourly-wind-label { font-size: .5rem; }
   .precip-plot { grid-template-columns: 36px minmax(0, 1fr); }
   .precip-bars { height: 48px; }
   .precip-bars span { flex-basis: 3px; width: 3px; }

@@ -539,10 +539,12 @@ class WeatherService {
       },
       {
         icon: "humidity.svg",
-        label: "Humidity/Dew Point",
+        label: "Humidity",
+        subLabel: "Dew Point",
         value: `${humidity} / ${this.formatMaybeTemp(dewPoint)}`,
         status: this.dewPointComfortLabel(dewPoint),
-        statusTone: this.dewPointComfortTone(dewPoint)
+        statusTone: this.dewPointComfortTone(dewPoint),
+        className: "humidity-stat"
       }
     ];
   }
@@ -838,7 +840,8 @@ class WeatherService {
       time: period.startTime,
       icon: this.iconForForecast(period.shortForecast, period.isDaytime),
       temp: period.temperature,
-      precip: `${this.precipValue(period)}%`
+      precip: `${this.precipValue(period)}%`,
+      wind: period.windSpeed || "0 mph"
     }));
   }
 
@@ -926,7 +929,7 @@ class WeatherService {
       { icon: "real-feel.svg", label: "Feels Like", value: this.feelsLikeFromText(text, low, high) },
       { icon: "rain-chance.svg", label: "Precipitation", value: precipValue },
       { icon: "wind.svg", label: "Wind & Gusts", value: windValue },
-      { icon: "humidity.svg", label: "Humidity/Dew Point", value: `${humidity} / Dew Point ${dewPoint}` },
+      { icon: "humidity.svg", label: "Humidity/Dew Point", value: `${humidity} / ${dewPoint}` },
       { icon: "aqi.svg", label: "Air Quality", value: airQuality },
       { icon: "pollen.svg", label: "Pollen Now", value: pollen }
     ];
@@ -1295,6 +1298,7 @@ let currentPollenDetails = [];
 let currentHealthDetails = [];
 let dashboardRequestId = 0;
 let locationRequestId = 0;
+let lastHourlyHours = [];
 
 function loadSavedLocation() {
   try {
@@ -1439,7 +1443,17 @@ function renderSummaryStats(stats) {
     setIcon(icon, item.icon || "weather-cloud.svg", "");
     label.textContent = item.label;
     value.textContent = item.value;
-    text.append(icon, label);
+    if (item.subLabel) {
+      const labelStack = document.createElement("span");
+      const subLabel = document.createElement("small");
+      labelStack.className = "stat-label-stack";
+      subLabel.className = "stat-sublabel";
+      subLabel.textContent = item.subLabel;
+      labelStack.append(label, subLabel);
+      text.append(icon, labelStack);
+    } else {
+      text.append(icon, label);
+    }
     valueWrap.appendChild(value);
     if (item.subvalue || item.status) {
       const detail = document.createElement("small");
@@ -1754,27 +1768,125 @@ function getCurrentHourForecast(hours) {
     };
   });
 }
+
+function parsePercentValue(value) {
+  const parsed = Number(String(value || "0").replace("%", ""));
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0;
+}
+
+function parseWindMph(value) {
+  const speeds = String(value || "")
+    .match(/\d+(?:\.\d+)?/g)
+    ?.map(Number)
+    .filter(Number.isFinite) || [];
+  return speeds.length ? Math.round(Math.max(...speeds)) : 0;
+}
+
+function precipChartY(chance) {
+  const value = parsePercentValue(chance);
+  if (value >= 90) return 6;
+  if (value >= 75) return 34;
+  return Math.max(42, Math.min(68, 76 - (value * 0.42)));
+}
+
 function renderHourly(hours) {
   elements.hourlyForecast.replaceChildren();
-  getCurrentHourForecast(hours).forEach((hour, index) => {
-    const item = document.createElement("article");
-    const time = document.createElement("span");
+  lastHourlyHours = Array.isArray(hours) ? hours : [];
+  const chartHours = getCurrentHourForecast(lastHourlyHours).slice(0, 8);
+  if (!chartHours.length) {
+    const empty = document.createElement("p");
+    empty.className = "hourly-empty";
+    empty.textContent = "Hourly forecast is updating.";
+    elements.hourlyForecast.appendChild(empty);
+    return;
+  }
+  const temps = chartHours.map((hour) => safeNumber(hour.temp)).filter(Number.isFinite);
+  const lowTemp = temps.length ? Math.min(...temps) : 0;
+  const highTemp = temps.length ? Math.max(...temps) : 1;
+  const tempRange = Math.max(1, highTemp - lowTemp);
+  const chart = document.createElement("div");
+  const svgNs = "http://www.w3.org/2000/svg";
+  const precipLayer = document.createElement("div");
+  const precipSvg = document.createElementNS(svgNs, "svg");
+  const positivePrecipPoints = [];
+
+  chart.className = "hourly-chart hourly-bar-chart";
+  precipLayer.className = "hourly-precip-layer";
+  precipSvg.classList.add("hourly-precip-line");
+  precipSvg.setAttribute("viewBox", "0 0 100 100");
+  precipSvg.setAttribute("preserveAspectRatio", "none");
+
+  chartHours.forEach((hour, index) => {
+    const column = document.createElement("div");
     const icon = document.createElement("img");
-    const temp = document.createElement("span");
+    const tempLabel = document.createElement("span");
+    const graph = document.createElement("div");
+    const tempBar = document.createElement("span");
+    const time = document.createElement("span");
     const precip = document.createElement("span");
-    item.className = "hour-item";
-    item.style.animationDelay = `${index * 35}ms`;
-    time.className = "hour-time";
-    temp.className = "hour-temp";
-    precip.className = "precip";
-    item.setAttribute("aria-label", `${hour.time}, ${formatTemp(hour.temp)}, precipitation ${hour.precip}`);
+    const wind = document.createElement("span");
+    const tempValue = safeNumber(hour.temp);
+    const precipChance = parsePercentValue(hour.precip);
+    const windSpeed = parseWindMph(hour.wind);
+    const tempOffset = tempValue === null ? 44 : 18 + (1 - ((tempValue - lowTemp) / tempRange)) * 38;
+
+    column.className = "hourly-column";
+    graph.className = "hourly-column-graph";
+    tempBar.className = "hourly-temp-bar";
+    icon.className = "hourly-weather-icon";
+    tempLabel.className = "hourly-temp-label";
+    time.className = "hourly-time-label";
+    precip.className = "hourly-precip-label";
+    wind.className = "hourly-wind-label";
+
+    tempLabel.textContent = formatTemp(tempValue);
     time.textContent = hour.time;
-    setIcon(icon, hour.icon, "");
-    temp.textContent = formatTemp(hour.temp);
-    precip.textContent = hour.precip;
-    item.append(time, icon, temp, precip);
-    elements.hourlyForecast.appendChild(item);
+    precip.textContent = `${precipChance}%`;
+    wind.textContent = `${windSpeed} mph`;
+    icon.src = iconSrc(hour.icon);
+    icon.alt = "";
+    tempBar.style.setProperty("--temp-top", `${tempOffset}%`);
+    if (precipChance > 0) {
+      positivePrecipPoints.push({
+        index,
+        x: ((index + 0.5) / chartHours.length) * 100,
+        y: precipChartY(precipChance)
+      });
+    }
+
+    graph.append(tempBar);
+    column.append(icon, tempLabel, graph, precip, wind, time);
+    chart.appendChild(column);
   });
+
+  if (positivePrecipPoints.length > 1) {
+    for (let index = 1; index < positivePrecipPoints.length; index += 1) {
+      const previous = positivePrecipPoints[index - 1];
+      const current = positivePrecipPoints[index];
+      if (current.index !== previous.index + 1) continue;
+      const line = document.createElementNS(svgNs, "line");
+      line.classList.add("hourly-precip-connector");
+      line.setAttribute("x1", previous.x);
+      line.setAttribute("y1", previous.y);
+      line.setAttribute("x2", current.x);
+      line.setAttribute("y2", current.y);
+      line.setAttribute("vector-effect", "non-scaling-stroke");
+      precipSvg.appendChild(line);
+    }
+  }
+
+  positivePrecipPoints.forEach((point) => {
+    const dot = document.createElement("span");
+    dot.className = "hourly-precip-dot";
+    dot.style.setProperty("--precip-x", `${point.x}%`);
+    dot.style.setProperty("--precip-y", `${point.y}%`);
+    precipLayer.appendChild(dot);
+  });
+
+  chart.style.setProperty("--hour-count", chartHours.length);
+  precipLayer.prepend(precipSvg);
+  chart.appendChild(precipLayer);
+  elements.hourlyForecast.appendChild(chart);
 }
 
 function renderDaily(days) {
@@ -1910,6 +2022,8 @@ function togglePanel(button, panel, force) {
   const shouldOpen = typeof force === "boolean" ? force : panel.hidden;
   panel.hidden = !shouldOpen;
   button.setAttribute("aria-expanded", String(shouldOpen));
+  const dailyCard = button.closest?.(".daily-day-card");
+  if (dailyCard) dailyCard.classList.toggle("is-open", shouldOpen);
 }
 
 function toggleRadar(force) {
