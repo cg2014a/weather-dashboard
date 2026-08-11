@@ -6,12 +6,30 @@ const AIRNOW_KEY_STORAGE_KEY = "skystation-airnow-key";
 const PRECIP_DISPLAY_THRESHOLD = 20;
 const nwsPointUrl = ({ lat, lon }) => `https://api.weather.gov/points/${lat},${lon}`;
 const nwsAlertsUrl = ({ lat, lon }) => `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
-const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,olive_pollen,ragweed_pollen,dust&timezone=auto`;
+const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,olive_pollen,ragweed_pollen,dust&hourly=us_aqi&timezone=auto&forecast_days=7`;
 const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=precipitation_probability,precipitation,rain,showers,snowfall,visibility&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=2`;
 const epaUvUrl = (location) => location.zip
   ? `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/ZIP/${location.zip}/JSON`
   : `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/CITY/${encodeURIComponent(location.city || "")}/STATE/${location.state || ""}/JSON`;
 const airNowUrl = ({ lat, lon }, apiKey) => `https://www.airnowapi.org/aq/observation/latLong/current/?format=application/json&latitude=${lat}&longitude=${lon}&distance=25&API_KEY=${encodeURIComponent(apiKey)}`;
+const airNowCurrentSitesUrl = ({ lat, lon }) => {
+  const latitude = Number(lat);
+  const longitude = Number(lon);
+  const params = new URLSearchParams({
+    f: "json",
+    where: "1=1",
+    outFields: "SiteName,StateName,OZONEPM_AQI,OZONEPM_AQI_LABEL,OZONEPM_AQI_SORT,PM25_AQI,PM_AQI,OZONE_AQI,Latitude,Longitude,Status,ValidTime",
+    returnGeometry: "false",
+    geometry: `${longitude},${latitude}`,
+    geometryType: "esriGeometryPoint",
+    inSR: "4326",
+    spatialRel: "esriSpatialRelIntersects",
+    distance: "75",
+    units: "esriSRUnit_StatuteMile",
+    outSR: "4326"
+  });
+  return `https://services1.arcgis.com/YiULsZbgRKmBtdZN/ArcGIS/rest/services/Particulate_Matter_Map_WFL1/FeatureServer/0/query?${params}`;
+};
 const sunUrl = ({ lat, lon }) => `https://api.sunrise-sunset.org/v2?lat=${lat}&lng=${lon}`;
 
 const emptyWeather = {
@@ -86,6 +104,7 @@ class WeatherService {
     const enrichedSupplemental = {
       ...supplemental,
       airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "Checking",
+      dailyAirQuality: airQuality?.dailyAirQuality || [],
       pollen: basePollen
     };
     enrichedSupplemental.pollen = {
@@ -122,6 +141,7 @@ class WeatherService {
     const enrichedSupplemental = {
       ...supplemental,
       airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "Checking",
+      dailyAirQuality: airQuality?.dailyAirQuality || [],
       pollen: {
         ...basePollen,
         health: this.mapHealthRisks({ ...supplemental, pollen: basePollen }, airQuality)
@@ -158,13 +178,20 @@ class WeatherService {
 
   async getAirQuality(location) {
     const airNow = await this.getAirNowQuality(location);
-    if (airNow) return airNow;
-    return this.getOpenMeteoAirQuality(location);
+    const openMeteo = await this.getOpenMeteoAirQuality(location);
+    if (airNow) {
+      return {
+        ...airNow,
+        pollen: openMeteo?.pollen,
+        dailyAirQuality: openMeteo?.dailyAirQuality || []
+      };
+    }
+    return openMeteo;
   }
 
   async getAirNowQuality(location) {
     const apiKey = localStorage.getItem(AIRNOW_KEY_STORAGE_KEY);
-    if (!apiKey) return null;
+    if (!apiKey) return this.getPublicAirNowQuality(location);
 
     try {
       const data = await this.fetchJson(airNowUrl(location, apiKey));
@@ -181,8 +208,44 @@ class WeatherService {
       };
     } catch (error) {
       console.warn("AirNow air quality unavailable.", error);
+      return this.getPublicAirNowQuality(location);
+    }
+  }
+
+  async getPublicAirNowQuality(location) {
+    try {
+      const data = await this.fetchJson(airNowCurrentSitesUrl(location));
+      const features = Array.isArray(data.features) ? data.features : [];
+      const readings = features
+        .map((feature) => this.publicAirNowReading(feature.attributes, location))
+        .filter(Boolean)
+        .sort((a, b) => a.distance - b.distance || b.value - a.value);
+      return readings[0] || null;
+    } catch (error) {
+      console.warn("Public AirNow monitor data unavailable.", error);
       return null;
     }
+  }
+
+  publicAirNowReading(attributes = {}, location) {
+    const value = this.firstNumber(
+      attributes.OZONEPM_AQI,
+      attributes.OZONEPM_AQI_SORT,
+      attributes.PM_AQI,
+      attributes.PM25_AQI,
+      attributes.OZONE_AQI
+    );
+    if (value === null || value < 0) return null;
+    const lat = this.numberOrNull(attributes.Latitude);
+    const lon = this.numberOrNull(attributes.Longitude);
+    return {
+      value: Math.round(value),
+      category: this.airQualityCategory(value),
+      tone: this.airQualityTone(value),
+      source: "AirNow",
+      siteName: attributes.SiteName || "",
+      distance: lat === null || lon === null ? Number.POSITIVE_INFINITY : this.distanceMiles(location.lat, location.lon, lat, lon)
+    };
   }
 
   async getOpenMeteoAirQuality(location) {
@@ -195,6 +258,7 @@ class WeatherService {
         category: this.airQualityCategory(value),
         tone: this.airQualityTone(value),
         pollen: this.mapPollen(data.current),
+        dailyAirQuality: this.dailyAirQualityFromHourly(data.hourly),
         source: "Open-Meteo"
       };
     } catch (error) {
@@ -461,13 +525,25 @@ class WeatherService {
       || "0 mph";
     const humidity = this.readHumidity(observation, supplemental, period);
     const dewPoint = this.dewPointFahrenheit(observation, supplemental);
+    const precipAmount = this.currentPrecipAmount(period, precipitation, supplemental);
 
     return [
       { icon: "real-feel.svg", label: "High/Low", value: `${this.formatMaybeTemp(current.high)} / ${this.formatMaybeTemp(current.low)}` },
-      { icon: "humidity.svg", label: "Humidity", value: humidity },
-      { icon: "dew.svg", label: "Dew Point", value: this.formatMaybeTemp(dewPoint), status: this.dewPointComfortLabel(dewPoint), statusTone: this.dewPointComfortTone(dewPoint) },
       { icon: "wind.svg", label: "Wind", value: windValue },
-      { icon: "rain-chance.svg", label: "Precipitation", value: this.precipChance(period, supplemental) }
+      {
+        icon: "rain-chance.svg",
+        label: "Precipitation",
+        value: this.precipChance(period, supplemental),
+        subvalue: this.showPrecipAmount(precipAmount) ? precipAmount : "",
+        className: "precip-stat"
+      },
+      {
+        icon: "humidity.svg",
+        label: "Humidity & Dew Point",
+        value: `${humidity} / ${this.formatMaybeTemp(dewPoint)}`,
+        status: this.dewPointComfortLabel(dewPoint),
+        statusTone: this.dewPointComfortTone(dewPoint)
+      }
     ];
   }
 
@@ -605,22 +681,74 @@ class WeatherService {
     return "warning";
   }
 
+  distanceMiles(latA, lonA, latB, lonB) {
+    const toRadians = (value) => (Number(value) * Math.PI) / 180;
+    const latitudeA = toRadians(latA);
+    const latitudeB = toRadians(latB);
+    const deltaLat = toRadians(latB - latA);
+    const deltaLon = toRadians(lonB - lonA);
+    const a = Math.sin(deltaLat / 2) ** 2 + Math.cos(latitudeA) * Math.cos(latitudeB) * Math.sin(deltaLon / 2) ** 2;
+    return 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  dailyAirQualityFromHourly(hourly = {}) {
+    const times = hourly.time || [];
+    const values = hourly.us_aqi || [];
+    const byDay = new Map();
+    times.forEach((time, index) => {
+      const value = this.numberOrNull(values[index]);
+      if (value === null) return;
+      const day = String(time).split("T")[0];
+      if (!day) return;
+      byDay.set(day, Math.max(byDay.get(day) || 0, value));
+    });
+    return Array.from(byDay.values()).slice(0, 7).map((value) => {
+      const rounded = Math.round(value);
+      return `${rounded} ${this.airQualityCategory(rounded)}`;
+    });
+  }
+
   mapDetails(period, observation, precipitation, supplemental) {
-    const humidity = this.readHumidity(observation, supplemental, period);
-    const dewPoint = this.readTemperatureLabel(observation?.properties?.dewpoint?.value, supplemental?.dewPoint);
     const wind = `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || this.formatOpenMeteoWind(supplemental) || "0 mph";
     const pollen = supplemental?.pollen || this.emptyPollen();
     return [
-      { icon: "rain-chance.svg", label: "Precipitation", value: `${this.precipChance(period, supplemental)} / ${this.currentPrecipAmount(period, precipitation, supplemental)}` },
-      { icon: "humidity.svg", label: "Humidity / Dew Point", value: `${humidity} / ${dewPoint}` },
       { icon: "wind.svg", label: "Wind / Gust", value: `${wind} / ${this.readWindGust(period, supplemental)}` },
       { icon: "aqi.svg", label: "Air Quality", value: supplemental?.airQualityLabel || "Checking" },
-      { icon: "pollen.svg", label: "Pollen & Allergens", value: "View Details", type: "pollen", details: pollen.details, health: pollen.health },
       { icon: "uv.svg", label: "UV Index", value: this.formatUvIndex(supplemental?.uvIndex) },
       { icon: "visibility.svg", label: "Visibility", value: this.readDistance(this.firstNumber(observation?.properties?.visibility?.value, supplemental?.visibility)) },
       { icon: "pressure.svg", label: "Pressure", value: this.readPressureWithFallback(observation?.properties?.barometricPressure?.value, supplemental?.pressure) },
-      { icon: "sunrise.svg", label: "Sunrise / Sunset", value: `${supplemental?.sunrise || "--"} / ${supplemental?.sunset || "--"}`, type: "sun", sunrise: supplemental?.sunrise || "--", sunset: supplemental?.sunset || "--" }
+      { icon: "sunrise.svg", label: "Daylight", value: this.daylightDurationLabel(supplemental), type: "sun", sunrise: supplemental?.sunrise || "--", sunset: supplemental?.sunset || "--" },
+      { icon: "pollen.svg", label: "Pollen & Allergens", value: "View Details", type: "pollen", wide: true, details: pollen.details, health: pollen.health }
     ];
+  }
+
+  currentPrecipDetail(period, precipitation, supplemental) {
+    const chance = this.precipChance(period, supplemental);
+    const amount = this.currentPrecipAmount(period, precipitation, supplemental);
+    return this.showPrecipAmount(amount) ? `${chance} / ${amount}` : chance;
+  }
+
+  daylightDurationLabel(supplemental) {
+    const sunrise = this.clockMinutes(supplemental?.sunrise);
+    const sunset = this.clockMinutes(supplemental?.sunset);
+    if (sunrise === null || sunset === null) return "--";
+    const minutes = sunset >= sunrise ? sunset - sunrise : sunset + 1440 - sunrise;
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+    return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+  }
+
+  clockMinutes(value) {
+    if (!value || value === "--") return null;
+    const match = String(value).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!match) return null;
+    let hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const period = match[3].toUpperCase();
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+    if (period === "AM" && hours === 12) hours = 0;
+    if (period === "PM" && hours !== 12) hours += 12;
+    return hours * 60 + minutes;
   }
 
   formatUvIndex(value) {
@@ -785,17 +913,30 @@ class WeatherService {
   dayMetrics(low, high, precip, text, precipAmount, dayPeriod, nightPeriod, supplemental, dayIndex = 0) {
     const combinedText = `${text || ""} ${dayPeriod?.shortForecast || ""} ${nightPeriod?.shortForecast || ""}`;
     const uv = supplemental?.dailyUvIndexes?.[dayIndex] ?? supplemental?.uvIndex;
+    const wind = this.windFromText(combinedText) || this.formatOpenMeteoWind(supplemental) || "0 mph";
+    const gusts = this.gustFromText(combinedText) || this.readWindGust(dayPeriod, supplemental);
+    const windDirection = this.windDirectionFromText(combinedText) || dayPeriod?.windDirection || this.windDirectionLabel(supplemental?.windDirection);
+    const humidity = this.readPercent(supplemental?.humidity);
+    const dewPoint = this.formatMaybeTemp(supplemental?.dewPoint);
+    const airQuality = supplemental?.dailyAirQuality?.[dayIndex] || "Checking";
+    const pollen = supplemental?.pollen?.category || "Checking";
+    const precipValue = [precip > 0 ? `${precip}%` : "0%", this.showPrecipAmount(precipAmount) ? precipAmount : ""].filter(Boolean).join(" / ");
+    const windValue = `${wind} / Gusts ${gusts}${windDirection ? ` (${windDirection})` : ""}`;
     return [
-      { label: "Feels Like", value: this.feelsLikeFromText(text, low, high) },
-      { label: "Precip Chance", value: precip > 0 ? `${precip}%` : "0%" },
-      { label: "Precip Amount", value: precipAmount || "0 in" },
-      { label: "Wind", value: this.windFromText(combinedText) || this.formatOpenMeteoWind(supplemental) || "0 mph" },
-      { label: "Gusts", value: this.gustFromText(combinedText) || this.readWindGust(dayPeriod, supplemental) },
-      { label: "Humidity", value: this.readPercent(supplemental?.humidity) },
-      { label: "UV", value: this.formatUvIndex(uv) },
-      { label: "Air Quality Now", value: supplemental?.airQualityLabel || "Checking" },
-      { label: "Pollen Now", value: supplemental?.pollen?.category || "Checking" }
+      { icon: "real-feel.svg", label: "Feels Like", value: this.feelsLikeFromText(text, low, high) },
+      { icon: "rain-chance.svg", label: "Precipitation", value: precipValue },
+      { icon: "wind.svg", label: "Wind & Gusts", value: windValue },
+      { icon: "humidity.svg", label: "Humidity & Dew Point", value: `${humidity} / Dew Point ${dewPoint}` },
+      { icon: "aqi.svg", label: "Air Quality", value: airQuality },
+      { icon: "pollen.svg", label: "Pollen Now", value: pollen }
     ];
+  }
+
+  showPrecipAmount(value = "") {
+    if (!value) return false;
+    const text = String(value).trim();
+    if (/^0(?:\.00)?\s*in$/i.test(text)) return false;
+    return true;
   }
 
   iconForForecast(text = "", isDaytime = true) {
@@ -1005,6 +1146,23 @@ class WeatherService {
     const match = text.match(/(?:north|south|east|west|northeast|northwest|southeast|southwest|[NSEW]{1,3})\s+wind\s+(?:around\s+)?(\d+(?:\s+to\s+\d+)?)\s*mph/i)
       || text.match(/wind\s+(?:around\s+)?(\d+(?:\s+to\s+\d+)?)\s*mph/i);
     return match ? `${match[1].replace(/\s+/g, " ")} mph` : "";
+  }
+
+  windDirectionFromText(text = "") {
+    const match = text.match(/\b(north|south|east|west|northeast|northwest|southeast|southwest|N|NE|E|SE|S|SW|W|NW|NNE|ENE|ESE|SSE|SSW|WSW|WNW|NNW)\s+wind\b/i);
+    if (!match) return "";
+    const value = match[1].toLowerCase();
+    const labels = {
+      north: "N",
+      south: "S",
+      east: "E",
+      west: "W",
+      northeast: "NE",
+      northwest: "NW",
+      southeast: "SE",
+      southwest: "SW"
+    };
+    return labels[value] || match[1].toUpperCase();
   }
 
   gustFromText(text = "") {
@@ -1273,10 +1431,11 @@ function renderSummaryStats(stats) {
     const label = document.createElement("span");
     const valueWrap = document.createElement("span");
     const value = document.createElement("strong");
-    row.className = item.tone ? `stat-row ${item.tone}` : "stat-row";
+    row.className = ["stat-row", item.tone, item.className].filter(Boolean).join(" ");
     text.className = "stat-label";
     valueWrap.className = "stat-value";
-    if (item.status && !item.subvalue) valueWrap.classList.add("inline-status");
+    if (item.status && !item.subvalue && item.inlineStatus) valueWrap.classList.add("inline-status");
+    if (item.inlineDetail) valueWrap.classList.add("inline-detail");
     setIcon(icon, item.icon || "weather-cloud.svg", "");
     label.textContent = item.label;
     value.textContent = item.value;
@@ -1284,8 +1443,18 @@ function renderSummaryStats(stats) {
     valueWrap.appendChild(value);
     if (item.subvalue || item.status) {
       const detail = document.createElement("small");
-      if (item.statusTone) detail.className = `dew-status ${item.statusTone}`;
-      detail.textContent = [item.subvalue, item.status].filter(Boolean).join(" • ");
+      detail.className = "stat-detail-line";
+      if (item.subvalue) {
+        const subvalue = document.createElement("span");
+        subvalue.textContent = item.subvalue;
+        detail.appendChild(subvalue);
+      }
+      if (item.status) {
+        const status = document.createElement("span");
+        status.className = item.statusTone ? `dew-status ${item.statusTone}` : "";
+        status.textContent = item.status;
+        detail.appendChild(status);
+      }
       valueWrap.appendChild(detail);
     }
     row.append(text, valueWrap);
@@ -1303,6 +1472,7 @@ function renderDetails(details) {
     const label = document.createElement("span");
     const value = document.createElement("span");
     card.className = item.type === "sun" ? "quick-item sun-card" : "quick-item";
+    if (item.wide) card.classList.add("is-wide");
     label.className = "quick-label";
     value.className = "quick-value";
     setIcon(icon, item.icon, "");
@@ -1311,7 +1481,8 @@ function renderDetails(details) {
       const times = document.createElement("div");
       times.className = "sun-times";
       times.innerHTML = `<div><span>Sunrise</span><strong>${item.sunrise}</strong></div><div><span>Sunset</span><strong>${item.sunset}</strong></div>`;
-      card.append(icon, label, times);
+      value.textContent = item.value;
+      card.append(icon, label, value, times);
     } else if (item.type === "pollen") {
       currentPollenDetails = item.details || [];
       currentHealthDetails = item.health || [];
@@ -1676,11 +1847,14 @@ function renderDaily(days) {
 function renderDailyDetailPanel(details, index) {
   const panel = document.createElement("section");
   const story = document.createElement("div");
+  const metricHeader = document.createElement("h3");
   const metrics = document.createElement("div");
   panel.className = "daily-detail-panel";
   panel.id = `dailyDetail${index}`;
   panel.hidden = true;
   story.className = "day-story";
+  metricHeader.className = "day-metrics-title";
+  metricHeader.textContent = "Conditions";
   metrics.className = "day-metrics";
 
   details.story.forEach((item) => {
@@ -1700,16 +1874,29 @@ function renderDailyDetailPanel(details, index) {
 
   details.metrics.forEach((item) => {
     const metric = document.createElement("article");
+    const icon = document.createElement("img");
+    const content = document.createElement("div");
     const label = document.createElement("span");
+    const valueGroup = document.createElement("div");
     const value = document.createElement("strong");
     metric.className = "day-metric";
+    content.className = "day-metric-content";
+    valueGroup.className = "day-metric-value";
+    setIcon(icon, item.icon || "weather-cloud.svg", "");
     label.textContent = item.label;
     value.textContent = item.value;
-    metric.append(label, value);
+    valueGroup.appendChild(value);
+    if (item.subvalue) {
+      const subvalue = document.createElement("small");
+      subvalue.textContent = item.subvalue;
+      valueGroup.appendChild(subvalue);
+    }
+    content.append(label, valueGroup);
+    metric.append(icon, content);
     metrics.appendChild(metric);
   });
 
-  panel.append(story, metrics);
+  panel.append(story, metricHeader, metrics);
   return panel;
 }
 
