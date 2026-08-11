@@ -1784,9 +1784,8 @@ function parseWindMph(value) {
 
 function precipChartY(chance) {
   const value = parsePercentValue(chance);
-  if (value >= 90) return 6;
-  if (value >= 75) return 34;
-  return Math.max(42, Math.min(68, 76 - (value * 0.42)));
+  if (value <= 0) return 82;
+  return Math.max(8, Math.min(82, 84 - (Math.pow(value, 0.7) * 3.05)));
 }
 
 function renderHourly(hours) {
