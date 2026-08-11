@@ -539,7 +539,7 @@ class WeatherService {
       },
       {
         icon: "humidity.svg",
-        label: "Humidity & Dew Point",
+        label: "Humidity/Dew Point",
         value: `${humidity} / ${this.formatMaybeTemp(dewPoint)}`,
         status: this.dewPointComfortLabel(dewPoint),
         statusTone: this.dewPointComfortTone(dewPoint)
@@ -926,7 +926,7 @@ class WeatherService {
       { icon: "real-feel.svg", label: "Feels Like", value: this.feelsLikeFromText(text, low, high) },
       { icon: "rain-chance.svg", label: "Precipitation", value: precipValue },
       { icon: "wind.svg", label: "Wind & Gusts", value: windValue },
-      { icon: "humidity.svg", label: "Humidity & Dew Point", value: `${humidity} / Dew Point ${dewPoint}` },
+      { icon: "humidity.svg", label: "Humidity/Dew Point", value: `${humidity} / Dew Point ${dewPoint}` },
       { icon: "aqi.svg", label: "Air Quality", value: airQuality },
       { icon: "pollen.svg", label: "Pollen Now", value: pollen }
     ];

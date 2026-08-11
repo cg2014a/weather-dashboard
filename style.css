@@ -197,10 +197,10 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .story-block strong { display: block; margin-bottom: 4px; font-size: .92rem; }
 .story-block p { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.35; }
 .day-metrics-title { margin: 0 0 -3px; color: #6d8299; font-size: .74rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
-.day-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; border: 1px solid #cfd7e2; border-radius: 18px; background: #f7f9fd; box-shadow: inset 0 1px 0 rgba(255,255,255,.75); }
+.day-metrics { display: grid; grid-template-columns: 1fr; overflow: hidden; border: 1px solid #cfd7e2; border-radius: 18px; background: #f7f9fd; box-shadow: inset 0 1px 0 rgba(255,255,255,.75); }
 .day-metric { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: center; min-height: 46px; padding: 7px 10px; border-right: 1px solid #d5dde8; border-bottom: 1px solid #d5dde8; background: rgba(255,255,255,.2); }
-.day-metric:nth-child(2n) { border-right: 0; }
-.day-metric:nth-last-child(-n+2) { border-bottom: 0; }
+.day-metric:nth-child(n) { border-right: 0; }
+.day-metric:last-child { border-bottom: 0; }
 .day-metric img { width: 21px; height: 21px; }
 .day-metric-content { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; min-width: 0; }
 .day-metric span { display: block; color: #5f6368; font-size: .66rem; font-weight: 850; line-height: 1.05; text-transform: uppercase; }
@@ -347,9 +347,7 @@ body.pollen-open { overflow: hidden; }
   .precip-bars { height: 48px; }
   .precip-bars span { flex-basis: 3px; width: 3px; }
   .alert-card { grid-template-columns: 28px minmax(0, 1fr) 16px; gap: 8px; padding: 11px 10px; }
-  .day-metrics { grid-template-columns: 1fr; }
   .day-metric { min-height: 44px; border-right: 0; }
-  .day-metric:nth-last-child(2) { border-bottom: 1px solid #d5dde8; }
   .pollen-card { min-height: 88px; padding: 11px; }
 }
 
