@@ -7,7 +7,7 @@ const PRECIP_DISPLAY_THRESHOLD = 20;
 const nwsPointUrl = ({ lat, lon }) => `https://api.weather.gov/points/${lat},${lon}`;
 const nwsAlertsUrl = ({ lat, lon }) => `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
 const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,olive_pollen,ragweed_pollen,dust&hourly=us_aqi&timezone=auto&forecast_days=7`;
-const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=precipitation_probability,precipitation,rain,showers,snowfall,visibility&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=2`;
+const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,rain,showers,snowfall,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=168`;
 const epaUvUrl = (location) => location.zip
   ? `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/ZIP/${location.zip}/JSON`
   : `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/CITY/${encodeURIComponent(location.city || "")}/STATE/${location.state || ""}/JSON`;
@@ -278,7 +278,7 @@ class WeatherService {
     return {
       ...openMeteo,
       pollen,
-      uvIndex: uvIndex ?? openMeteo?.uvIndex ?? null,
+      uvIndex: openMeteo?.uvIndex ?? uvIndex ?? null,
       sunrise: sun?.sunrise || openMeteo?.sunrise || null,
       sunset: sun?.sunset || openMeteo?.sunset || null
     };
@@ -344,6 +344,7 @@ class WeatherService {
       const current = data.current || {};
       const daily = data.daily || {};
       const hourly = data.hourly || {};
+      const dailySupplemental = this.dailyValuesFromHourly(hourly);
       return {
         temperature: this.numberOrNull(current.temperature_2m),
         humidity: this.numberOrNull(current.relative_humidity_2m),
@@ -360,6 +361,12 @@ class WeatherService {
         precipChance: this.numberOrNull(hourly.precipitation_probability?.[0]),
         hourlyPrecipChances: (hourly.precipitation_probability || []).map((value) => this.numberOrNull(value)),
         hourlyPrecipAmounts: (hourly.precipitation || []).map((value) => this.numberOrNull(value)),
+        hourlyHumidity: (hourly.relative_humidity_2m || []).map((value) => this.numberOrNull(value)),
+        hourlyDewPoints: (hourly.dew_point_2m || []).map((value) => this.numberOrNull(value)),
+        hourlyWindSpeeds: (hourly.wind_speed_10m || []).map((value) => this.numberOrNull(value)),
+        hourlyWindDirections: (hourly.wind_direction_10m || []).map((value) => this.numberOrNull(value)),
+        hourlyWindGusts: (hourly.wind_gusts_10m || []).map((value) => this.numberOrNull(value)),
+        hourlyUvIndexes: (hourly.uv_index || []).map((value) => this.numberOrNull(value)),
         visibility: this.numberOrNull(hourly.visibility?.[0]),
         high: this.numberOrNull(daily.temperature_2m_max?.[0]),
         low: this.numberOrNull(daily.temperature_2m_min?.[0]),
@@ -367,8 +374,15 @@ class WeatherService {
         dailyPrecipAmounts: (daily.precipitation_sum || []).map((value) => this.numberOrNull(value)),
         dailyHighs: (daily.temperature_2m_max || []).map((value) => this.numberOrNull(value)),
         dailyLows: (daily.temperature_2m_min || []).map((value) => this.numberOrNull(value)),
+        dailyDates: Array.isArray(daily.time) && daily.time.length ? daily.time : dailySupplemental.dates,
         dailyUvIndexes: (daily.uv_index_max || []).map((value) => this.numberOrNull(value)),
-        uvIndex: this.numberOrNull(daily.uv_index_max?.[0]),
+        dailyHumidity: dailySupplemental.humidity,
+        dailyDewPoints: dailySupplemental.dewPoints,
+        dailyWindSpeeds: dailySupplemental.windSpeeds,
+        dailyWindDirections: dailySupplemental.windDirections,
+        dailyWindGusts: dailySupplemental.windGusts,
+        dailyHourlyUvIndexes: dailySupplemental.uvIndexes,
+        uvIndex: this.numberOrNull(hourly.uv_index?.[0]) ?? this.numberOrNull(daily.uv_index_max?.[0]),
         sunrise: this.formatSunTime(daily.sunrise?.[0]),
         sunset: this.formatSunTime(daily.sunset?.[0])
       };
@@ -376,6 +390,47 @@ class WeatherService {
       console.warn("Open-Meteo supplemental weather unavailable.", error);
       return null;
     }
+  }
+
+  dailyValuesFromHourly(hourly = {}) {
+    const times = hourly.time || [];
+    const groups = new Map();
+    times.forEach((time, index) => {
+      const key = String(time || "").slice(0, 10);
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(index);
+    });
+
+    const average = (values) => {
+      const valid = values.map((value) => this.numberOrNull(value)).filter(Number.isFinite);
+      return valid.length ? valid.reduce((total, value) => total + value, 0) / valid.length : null;
+    };
+    const maximum = (values) => {
+      const valid = values.map((value) => this.numberOrNull(value)).filter(Number.isFinite);
+      return valid.length ? Math.max(...valid) : null;
+    };
+
+    const valuesFor = (field, indexes) => indexes.map((index) => field?.[index]);
+    const humidity = [];
+    const dewPoints = [];
+    const windSpeeds = [];
+    const windDirections = [];
+    const windGusts = [];
+    const uvIndexes = [];
+    const dates = [];
+
+    [...groups.entries()].slice(0, 7).forEach(([date, indexes]) => {
+      dates.push(date);
+      humidity.push(average(valuesFor(hourly.relative_humidity_2m, indexes)));
+      dewPoints.push(average(valuesFor(hourly.dew_point_2m, indexes)));
+      windSpeeds.push(average(valuesFor(hourly.wind_speed_10m, indexes)));
+      windDirections.push(average(valuesFor(hourly.wind_direction_10m, indexes)));
+      windGusts.push(maximum(valuesFor(hourly.wind_gusts_10m, indexes)));
+      uvIndexes.push(maximum(valuesFor(hourly.uv_index, indexes)));
+    });
+
+    return { dates, humidity, dewPoints, windSpeeds, windDirections, windGusts, uvIndexes };
   }
 
   async resolveZip(zip) {
@@ -841,7 +896,8 @@ class WeatherService {
       icon: this.iconForForecast(period.shortForecast, period.isDaytime),
       temp: period.temperature,
       precip: `${this.precipValue(period)}%`,
-      wind: period.windSpeed || "0 mph"
+      wind: period.windSpeed || "0 mph",
+      windDirection: period.windDirection || ""
     }));
   }
 
@@ -864,14 +920,16 @@ class WeatherService {
   }
 
   buildDailyForecast(dayPeriod, nightPeriod, supplemental, dayIndex) {
-    const low = nightPeriod?.temperature ?? supplemental?.dailyLows?.[dayIndex] ?? dayPeriod.temperature;
-    const high = dayPeriod.temperature ?? supplemental?.dailyHighs?.[dayIndex];
+    const supplementalIndex = this.dailyIndexForStart(dayPeriod.startTime, supplemental, dayIndex);
+    const low = nightPeriod?.temperature ?? supplemental?.dailyLows?.[supplementalIndex] ?? dayPeriod.temperature;
+    const high = dayPeriod.temperature ?? supplemental?.dailyHighs?.[supplementalIndex];
     const precip = Math.max(this.precipValue(dayPeriod), this.precipValue(nightPeriod));
     const text = `${dayPeriod.detailedForecast || ""} ${nightPeriod?.detailedForecast || ""}`;
-    const precipAmount = this.precipAmountFromText(text) || this.formatInches(supplemental?.dailyPrecipAmounts?.[dayIndex]);
+    const precipAmount = this.precipAmountFromText(text) || this.formatInches(supplemental?.dailyPrecipAmounts?.[supplementalIndex]);
 
     return {
       day: this.dayLabel(dayPeriod.startTime),
+      date: this.dayNumber(dayPeriod.startTime),
       icon: this.iconForForecast(dayPeriod.shortForecast, true),
       condition: dayPeriod.shortForecast,
       high,
@@ -884,19 +942,21 @@ class WeatherService {
           { icon: this.iconForForecast(dayPeriod.shortForecast, true), title: this.dayTitle(dayPeriod.startTime), text: dayPeriod.detailedForecast || dayPeriod.shortForecast },
           { icon: this.iconForForecast(nightPeriod?.shortForecast, false), title: this.nightTitle(dayPeriod.startTime), text: nightPeriod?.detailedForecast || "Night forecast is updating." }
         ],
-        metrics: this.dayMetrics(low, high, precip, text, precipAmount, dayPeriod, nightPeriod, supplemental, dayIndex)
+        metrics: this.dayMetrics(low, high, precip, text, precipAmount, dayPeriod, nightPeriod, supplemental, supplementalIndex)
       }
     };
   }
 
   buildTodayCarryover(period, todayLabel, supplemental) {
+    const supplementalIndex = this.dailyIndexForStart(period?.startTime, supplemental, 0);
     const temp = period?.temperature ?? null;
     const precip = this.precipValue(period);
     const text = period?.detailedForecast || period?.shortForecast || "Tonight forecast is updating.";
-    const precipAmount = this.precipAmountFromText(text) || this.formatInches(supplemental?.dailyPrecipAmounts?.[0]);
+    const precipAmount = this.precipAmountFromText(text) || this.formatInches(supplemental?.dailyPrecipAmounts?.[supplementalIndex]);
 
     return {
       day: todayLabel,
+      date: this.dayNumber(period?.startTime || new Date()),
       icon: this.iconForForecast(period?.shortForecast, false),
       condition: period?.shortForecast || "Tonight",
       high: temp,
@@ -908,21 +968,48 @@ class WeatherService {
         story: [
           { icon: this.iconForForecast(period?.shortForecast, false), title: "Tonight", text }
         ],
-        metrics: this.dayMetrics(temp, temp, precip, text, precipAmount, period, null, supplemental, 0)
+        metrics: this.dayMetrics(temp, temp, precip, text, precipAmount, period, null, supplemental, supplementalIndex)
       }
     };
   }
 
+  dailyIndexForStart(startTime, supplemental, fallbackIndex = 0) {
+    const dates = supplemental?.dailyDates || [];
+    const dateKey = this.dateKey(startTime);
+    const matchedIndex = dateKey ? dates.findIndex((date) => date === dateKey) : -1;
+    if (matchedIndex >= 0) return matchedIndex;
+    const safeFallback = Number.isInteger(fallbackIndex) && fallbackIndex >= 0 ? fallbackIndex : 0;
+    return Math.min(safeFallback, Math.max(0, dates.length - 1));
+  }
+
+  dateKey(value) {
+    if (!value) return "";
+    const localDate = String(value).match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+    if (localDate) return localDate;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toISOString().slice(0, 10);
+  }
+
   dayMetrics(low, high, precip, text, precipAmount, dayPeriod, nightPeriod, supplemental, dayIndex = 0) {
     const combinedText = `${text || ""} ${dayPeriod?.shortForecast || ""} ${nightPeriod?.shortForecast || ""}`;
-    const uv = supplemental?.dailyUvIndexes?.[dayIndex] ?? supplemental?.uvIndex;
-    const wind = this.windFromText(combinedText) || this.formatOpenMeteoWind(supplemental) || "0 mph";
-    const gusts = this.gustFromText(combinedText) || this.readWindGust(dayPeriod, supplemental);
-    const windDirection = this.windDirectionFromText(combinedText) || dayPeriod?.windDirection || this.windDirectionLabel(supplemental?.windDirection);
-    const humidity = this.readPercent(supplemental?.humidity);
-    const dewPoint = this.formatMaybeTemp(supplemental?.dewPoint);
+    const uv = this.firstNumber(supplemental?.dailyUvIndexes?.[dayIndex], supplemental?.dailyHourlyUvIndexes?.[dayIndex], supplemental?.uvIndex);
+    const dailyWindSpeed = this.numberOrNull(supplemental?.dailyWindSpeeds?.[dayIndex]);
+    const dailyWindDirection = this.windDirectionLabel(supplemental?.dailyWindDirections?.[dayIndex]);
+    const dailyWind = dailyWindSpeed === null ? "" : `${dailyWindDirection} ${Math.round(dailyWindSpeed)} mph`.trim();
+    const dailyGust = this.numberOrNull(supplemental?.dailyWindGusts?.[dayIndex]);
+    const wind = this.windFromText(combinedText) || dailyWind || this.formatOpenMeteoWind(supplemental) || "0 mph";
+    const gusts = this.gustFromText(combinedText) || (dailyGust === null ? "" : `${Math.round(dailyGust)} mph`) || this.readWindGust(dayPeriod, supplemental);
+    const windDirection = this.windDirectionFromText(combinedText) || dayPeriod?.windDirection || dailyWindDirection || this.windDirectionLabel(supplemental?.windDirection);
+    const humidity = this.readPercent(this.firstNumber(supplemental?.dailyHumidity?.[dayIndex], supplemental?.humidity));
+    const dewPoint = this.formatMaybeTemp(this.firstNumber(supplemental?.dailyDewPoints?.[dayIndex], supplemental?.dewPoint));
     const airQuality = supplemental?.dailyAirQuality?.[dayIndex] || "Checking";
-    const pollen = supplemental?.pollen?.category || "Checking";
+    const pollenDetails = [
+      ...(supplemental?.pollen?.details || []),
+      ...(supplemental?.pollen?.health || [])
+    ];
+    const pollenItems = pollenDetails.filter((item) => ["Moderate", "High", "Very High", "Extreme"].includes(item.category));
+    const pollen = pollenItems.length ? "" : "Air is Clear";
     const precipValue = [precip > 0 ? `${precip}%` : "0%", this.showPrecipAmount(precipAmount) ? precipAmount : ""].filter(Boolean).join(" / ");
     const windValue = `${wind} / Gusts ${gusts}${windDirection ? ` (${windDirection})` : ""}`;
     return [
@@ -930,8 +1017,9 @@ class WeatherService {
       { icon: "rain-chance.svg", label: "Precipitation", value: precipValue },
       { icon: "wind.svg", label: "Wind & Gusts", value: windValue },
       { icon: "humidity.svg", label: "Humidity/Dew Point", value: `${humidity} / ${dewPoint}` },
+      { icon: "uv.svg", label: "UV Index", value: this.formatUvIndex(uv) },
       { icon: "aqi.svg", label: "Air Quality", value: airQuality },
-      { icon: "pollen.svg", label: "Pollen Now", value: pollen }
+      { icon: "pollen.svg", label: "Pollen & Allergens", value: pollen, type: "pollen-pills", items: pollenItems }
     ];
   }
 
@@ -1086,19 +1174,29 @@ class WeatherService {
   }
 
   readHumidity(observation, supplemental, period) {
-    const nwsHumidity = this.numberOrNull(observation?.properties?.relativeHumidity?.value);
+    const nwsHumidity = this.isFreshObservation(observation) ? this.numberOrNull(observation?.properties?.relativeHumidity?.value) : null;
     const fallbackHumidity = this.numberOrNull(supplemental?.humidity);
     const validHumidity = [nwsHumidity, fallbackHumidity].find((value) => Number.isFinite(value) && value > 0 && value <= 100);
     if (Number.isFinite(validHumidity)) return `${Math.round(validHumidity)}%`;
-    if (/rain|showers|thunder|storm|drizzle|fog/i.test(period?.shortForecast || "")) return "High";
-    return "--";
+    return "0%";
   }
 
   dewPointFahrenheit(observation, supplemental) {
+    const observedDewPoint = this.isFreshObservation(observation)
+      ? this.readTemperature(observation?.properties?.dewpoint?.value)
+      : null;
     return this.firstNumber(
-      this.readTemperature(observation?.properties?.dewpoint?.value),
+      observedDewPoint,
       supplemental?.dewPoint
     );
+  }
+
+  isFreshObservation(observation) {
+    const timestamp = observation?.properties?.timestamp;
+    if (!timestamp) return false;
+    const observedAt = new Date(timestamp).getTime();
+    if (!Number.isFinite(observedAt)) return false;
+    return Date.now() - observedAt <= 90 * 60 * 1000;
   }
 
   dewPointComfortLabel(value) {
@@ -1267,6 +1365,11 @@ class WeatherService {
 
   dayTitle(value) {
     return new Date(value).toLocaleDateString([], { weekday: "long" });
+  }
+
+  dayNumber(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "" : String(date.getDate());
   }
 
   nightTitle(value) {
@@ -1824,6 +1927,7 @@ function renderHourly(hours) {
     const time = document.createElement("span");
     const precip = document.createElement("span");
     const wind = document.createElement("span");
+    const windDirection = document.createElement("span");
     const tempValue = safeNumber(hour.temp);
     const precipChance = parsePercentValue(hour.precip);
     const windSpeed = parseWindMph(hour.wind);
@@ -1837,11 +1941,13 @@ function renderHourly(hours) {
     time.className = "hourly-time-label";
     precip.className = "hourly-precip-label";
     wind.className = "hourly-wind-label";
+    windDirection.className = "hourly-wind-direction";
 
     tempLabel.textContent = formatTemp(tempValue);
     time.textContent = hour.time;
     precip.textContent = `${precipChance}%`;
     wind.textContent = `${windSpeed} mph`;
+    windDirection.textContent = hour.windDirection || "";
     icon.src = iconSrc(hour.icon);
     icon.alt = "";
     tempBar.style.setProperty("--temp-top", `${tempOffset}%`);
@@ -1854,7 +1960,7 @@ function renderHourly(hours) {
     }
 
     graph.append(tempBar);
-    column.append(icon, tempLabel, graph, precip, wind, time);
+    column.append(time, icon, tempLabel, graph, precip, wind, windDirection);
     chart.appendChild(column);
   });
 
@@ -1931,7 +2037,13 @@ function renderDaily(days) {
     chevron.className = "day-chevron";
     chevron.setAttribute("aria-hidden", "true");
 
-    dayName.textContent = day.day;
+    dayName.textContent = "";
+    dayName.append(document.createTextNode(day.day));
+    if (day.date) {
+      const dayNumber = document.createElement("small");
+      dayNumber.textContent = day.date;
+      dayName.appendChild(dayNumber);
+    }
     setIcon(icon, day.icon, "");
     precip.textContent = dailyPrecipText(day);
     precip.hidden = !dailyPrecipText(day);
@@ -1995,8 +2107,15 @@ function renderDailyDetailPanel(details, index) {
     valueGroup.className = "day-metric-value";
     setIcon(icon, item.icon || "weather-cloud.svg", "");
     label.textContent = item.label;
-    value.textContent = item.value;
-    valueGroup.appendChild(value);
+    if (item.type === "pollen-pills" && item.items?.length) {
+      const pillList = document.createElement("div");
+      pillList.className = "day-allergen-pills";
+      item.items.forEach((allergen) => pillList.appendChild(createAllergenBadge(allergen)));
+      valueGroup.appendChild(pillList);
+    } else {
+      value.textContent = item.value;
+      valueGroup.appendChild(value);
+    }
     if (item.subvalue) {
       const subvalue = document.createElement("small");
       subvalue.textContent = item.subvalue;
@@ -2009,6 +2128,21 @@ function renderDailyDetailPanel(details, index) {
 
   panel.append(story, metricHeader, metrics);
   return panel;
+}
+
+function createAllergenBadge(item) {
+  const badge = document.createElement("span");
+  const icon = document.createElement("img");
+  const name = document.createElement("span");
+  const severity = document.createElement("strong");
+  badge.className = `allergen-badge ${String(item.category || "").toLowerCase().replace(/\s+/g, "-")}`;
+  badge.title = `${item.label}: ${item.category}`;
+  badge.setAttribute("aria-label", `${item.label}: ${item.category}`);
+  setIcon(icon, item.icon || "pollen.svg", "");
+  name.textContent = shortAllergenLabel(item.label);
+  severity.textContent = item.category;
+  badge.append(icon, name, severity);
+  return badge;
 }
 
 function dailyPrecipText(day) {
