@@ -149,6 +149,11 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .alert-card:focus-visible { outline: 3px solid rgba(217, 48, 37, .28); outline-offset: 3px; }
 .alert-details { max-width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(95, 22, 15, .18); color: #4f150f; font-size: .78rem; line-height: 1.4; white-space: pre-line; overflow-wrap: anywhere; word-break: break-word; animation: expandIn .22s ease both; }
 .alert-details[hidden] { display: none; }
+.alert-detail-section { padding-top: 12px; border-top: 1px solid rgba(95, 22, 15, .16); }
+.alert-detail-section:first-child { padding-top: 0; border-top: 0; }
+.alert-detail-section h3 { margin: 0 0 8px; color: #5f160f; font-size: .82rem; font-weight: 850; line-height: 1.2; }
+.alert-detail-section p { margin: 0; color: #4f150f; font-size: inherit; line-height: inherit; white-space: pre-line; }
+.alert-detail-section + .alert-detail-section { margin-top: 12px; }
 
 .forecast-card { min-width: 0; padding: 15px 16px; }
 .current-card .forecast-card { box-shadow: none; border-radius: 12px; background: #f8fbff; }

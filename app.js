@@ -956,18 +956,21 @@ class WeatherService {
     const summary = activeAlerts.length > 1
       ? activeAlerts.map((alert) => alert.event || alert.headline || "Weather Alert").join(" • ")
       : activeAlerts[0].headline || activeAlerts[0].description || "An active weather alert has been issued for this area.";
-    const details = activeAlerts.map((alert, index) => [
-      activeAlerts.length > 1 ? `Alert ${index + 1}: ${alert.event || "Weather Alert"}` : "",
-      this.cleanAlertText(alert.description),
-      alert.instruction ? `What to do:\n${this.cleanAlertText(alert.instruction)}` : "",
-      alert.areaDesc ? `Areas affected:\n${this.cleanAlertText(alert.areaDesc)}` : "",
-      alert.expires ? `Expires:\n${this.formatAlertTime(alert.expires)}` : ""
-    ].filter(Boolean).join("\n\n"));
+    const sections = activeAlerts.map((alert, index) => ({
+      title: activeAlerts.length > 1 ? `Alert ${index + 1}: ${alert.event || "Weather Alert"}` : alert.event || "Weather Alert",
+      body: [
+        this.cleanAlertText(alert.description),
+        alert.instruction ? `What to do:\n${this.cleanAlertText(alert.instruction)}` : "",
+        alert.areaDesc ? `Areas affected:\n${this.cleanAlertText(alert.areaDesc)}` : "",
+        alert.expires ? `Expires:\n${this.formatAlertTime(alert.expires)}` : ""
+      ].filter(Boolean).join("\n\n")
+    }));
 
     return {
       headline,
       body: this.cleanAlertText(summary),
-      details: details.join("\n\n")
+      details: sections.map((section) => [section.title, section.body].filter(Boolean).join("\n\n")).join("\n\n"),
+      sections
     };
   }
 
@@ -2080,15 +2083,33 @@ function renderAlert(alert) {
     elements.alertCard.hidden = true;
     elements.alertCard.setAttribute("aria-expanded", "false");
     elements.alertDetails.hidden = true;
-    elements.alertDetails.textContent = "";
+    elements.alertDetails.replaceChildren();
     return;
   }
   elements.alertCard.hidden = false;
   elements.alertCard.setAttribute("aria-expanded", "false");
   setText("alertHeadline", alert.headline);
   setText("alertBody", alert.body);
-  elements.alertDetails.textContent = alert.details || alert.body;
+  renderAlertDetails(alert);
   elements.alertDetails.hidden = true;
+}
+
+function renderAlertDetails(alert) {
+  elements.alertDetails.replaceChildren();
+  const sections = Array.isArray(alert?.sections) && alert.sections.length
+    ? alert.sections
+    : [{ title: alert?.headline || "Weather Alert", body: alert?.details || alert?.body || "" }];
+
+  sections.forEach((section) => {
+    const block = document.createElement("article");
+    const title = document.createElement("h3");
+    const body = document.createElement("p");
+    block.className = "alert-detail-section";
+    title.textContent = section.title || "Weather Alert";
+    body.textContent = section.body || "";
+    block.append(title, body);
+    elements.alertDetails.appendChild(block);
+  });
 }
 
 function formatHourLabel(date) {
