@@ -7,6 +7,20 @@ const AIRNOW_KEY_STORAGE_KEY = "skystation-airnow-key";
 const PRECIP_DISPLAY_THRESHOLD = 20;
 const nwsPointUrl = ({ lat, lon }) => `https://api.weather.gov/points/${lat},${lon}`;
 const nwsAlertsUrl = ({ lat, lon }) => `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
+const spcOutlookUrl = (layerId, { lat, lon }) => {
+  const params = new URLSearchParams({
+    f: "json",
+    where: "1=1",
+    outFields: "dn,label,label2,valid,valid_iso,expire,expire_iso",
+    returnGeometry: "false",
+    geometry: `${lon},${lat}`,
+    geometryType: "esriGeometryPoint",
+    inSR: "4326",
+    spatialRel: "esriSpatialRelIntersects",
+    outSR: "4326"
+  });
+  return `https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/FeatureServer/${layerId}/query?${params}`;
+};
 const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,olive_pollen,ragweed_pollen,dust&hourly=us_aqi&timezone=auto&forecast_days=7`;
 const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,rain,showers,snowfall,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=168`;
 const epaUvUrl = (location) => location.zip
@@ -85,13 +99,14 @@ class WeatherService {
     const properties = point.properties;
     if (!properties?.forecast && !properties?.forecastHourly) throw new Error("NWS forecast links unavailable.");
 
-    const [forecast, hourly, alerts, observation, airQuality, supplemental] = (await Promise.allSettled([
+    const [forecast, hourly, alerts, observation, airQuality, supplemental, spcOutlooks] = (await Promise.allSettled([
       properties.forecast ? this.fetchJson(properties.forecast) : Promise.resolve(null),
       properties.forecastHourly ? this.fetchJson(properties.forecastHourly) : Promise.resolve(null),
       this.fetchJson(nwsAlertsUrl(location)),
       properties.observationStations ? this.getLatestObservation(properties.observationStations) : Promise.resolve(null),
       this.getAirQuality(location),
-      this.getSupplementalWeather(location)
+      this.getSupplementalWeather(location),
+      this.getSpcOutlooks(location)
     ])).map((result) => this.settledValue(result));
 
     const hourlyPeriods = hourly?.properties?.periods || [];
@@ -106,6 +121,8 @@ class WeatherService {
       ...supplemental,
       airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "Checking",
       dailyAirQuality: airQuality?.dailyAirQuality || [],
+      alertHazards: this.mapAlertHazards(alerts || { features: [] }),
+      spcOutlooks: spcOutlooks || [],
       pollen: basePollen
     };
     enrichedSupplemental.pollen = {
@@ -129,10 +146,11 @@ class WeatherService {
   }
 
   async getFallbackWeather(location) {
-    const [airQuality, supplemental] = await Promise.all([
+    const [airQuality, supplemental, spcOutlooks] = (await Promise.allSettled([
       this.getAirQuality(location),
-      this.getSupplementalWeather(location)
-    ]);
+      this.getSupplementalWeather(location),
+      this.getSpcOutlooks(location)
+    ])).map((result) => this.settledValue(result));
     if (!supplemental) throw new Error("Supplemental weather unavailable.");
 
     const currentPeriod = this.periodFromSupplemental(supplemental);
@@ -143,6 +161,8 @@ class WeatherService {
       ...supplemental,
       airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "Checking",
       dailyAirQuality: airQuality?.dailyAirQuality || [],
+      alertHazards: [],
+      spcOutlooks: spcOutlooks || [],
       pollen: {
         ...basePollen,
         health: this.mapHealthRisks({ ...supplemental, pollen: basePollen }, airQuality)
@@ -188,6 +208,81 @@ class WeatherService {
       };
     }
     return openMeteo;
+  }
+
+  async getSpcOutlooks(location) {
+    if (!Number.isFinite(Number(location?.lat)) || !Number.isFinite(Number(location?.lon))) return [];
+    const layers = [
+      { dayOffset: 0, layerId: 1, type: "categorical" },
+      { dayOffset: 0, layerId: 3, type: "probability" },
+      { dayOffset: 0, layerId: 5, type: "probability" },
+      { dayOffset: 0, layerId: 7, type: "probability" },
+      { dayOffset: 1, layerId: 9, type: "categorical" },
+      { dayOffset: 1, layerId: 11, type: "probability" },
+      { dayOffset: 1, layerId: 13, type: "probability" },
+      { dayOffset: 1, layerId: 15, type: "probability" },
+      { dayOffset: 2, layerId: 17, type: "categorical" },
+      { dayOffset: 2, layerId: 19, type: "probability" },
+      { dayOffset: 3, layerId: 21, type: "probability" },
+      { dayOffset: 4, layerId: 22, type: "probability" },
+      { dayOffset: 5, layerId: 23, type: "probability" },
+      { dayOffset: 6, layerId: 24, type: "probability" },
+      { dayOffset: 7, layerId: 25, type: "probability" }
+    ];
+    const results = await Promise.allSettled(layers.map(async (layer) => {
+      const data = await this.fetchJson(spcOutlookUrl(layer.layerId, location));
+      return this.mapSpcLayer(layer, data);
+    }));
+    return results
+      .flatMap((result) => result.status === "fulfilled" ? result.value : [])
+      .filter(Boolean)
+      .reduce((items, outlook) => this.mergeSpcOutlook(items, outlook), []);
+  }
+
+  mapSpcLayer(layer, data) {
+    const features = Array.isArray(data?.features) ? data.features : [];
+    return features
+      .map((feature) => this.spcOutlookFromAttributes(layer, feature.attributes || {}))
+      .filter(Boolean);
+  }
+
+  spcOutlookFromAttributes(layer, attributes) {
+    const dn = this.numberOrNull(attributes.dn);
+    if (dn === null) return null;
+    const label = String(attributes.label2 || attributes.label || `${dn}`).trim();
+    const level = layer.type === "categorical"
+      ? this.spcCategoricalLevel(dn, label)
+      : this.spcProbabilityLevel(dn, layer.dayOffset);
+    if (!level) return null;
+    return {
+      dayOffset: layer.dayOffset,
+      level,
+      source: label || `SPC ${dn}`,
+      rank: level === "alert" ? 2 : 1
+    };
+  }
+
+  spcCategoricalLevel(dn, label) {
+    const value = String(label || "").toLowerCase();
+    if (dn >= 5 || /enhanced|moderate|high/.test(value)) return "alert";
+    if (dn >= 3 || /marginal|slight/.test(value)) return "impact";
+    return "";
+  }
+
+  spcProbabilityLevel(dn, dayOffset) {
+    if (dn >= 30) return "alert";
+    if (dn >= 15) return "impact";
+    if (dayOffset <= 1 && dn >= 10) return "impact";
+    return "";
+  }
+
+  mergeSpcOutlook(items, outlook) {
+    const existingIndex = items.findIndex((item) => item.dayOffset === outlook.dayOffset);
+    if (existingIndex === -1) return [...items, outlook];
+    if (outlook.rank <= items[existingIndex].rank) return items;
+    const next = [...items];
+    next[existingIndex] = outlook;
+    return next;
   }
 
   async getAirNowQuality(location) {
@@ -876,6 +971,23 @@ class WeatherService {
     };
   }
 
+  mapAlertHazards(alerts) {
+    const activeAlerts = alerts?.features?.map((feature) => feature.properties).filter(Boolean) || [];
+    return activeAlerts.map((alert) => {
+      const event = alert.event || alert.headline || "Weather Alert";
+      return {
+        event,
+        headline: alert.headline || event,
+        description: alert.description || "",
+        instruction: alert.instruction || "",
+        severity: alert.severity || "",
+        start: alert.onset || alert.effective || alert.sent || null,
+        end: alert.ends || alert.expires || null,
+        level: this.hazardLevelFromText(`${event} ${alert.headline || ""} ${alert.description || ""}`, true)
+      };
+    }).filter((alert) => alert.level);
+  }
+
   cleanAlertText(value = "") {
     return String(value).replace(/\r?\n/g, " ").replace(/\s*\*\s+/g, "\n").replace(/[ \t]+/g, " ").trim();
   }
@@ -927,6 +1039,7 @@ class WeatherService {
     const precip = Math.max(this.precipValue(dayPeriod), this.precipValue(nightPeriod));
     const text = `${dayPeriod.detailedForecast || ""} ${nightPeriod?.detailedForecast || ""}`;
     const precipAmount = this.precipAmountFromText(text) || this.formatInches(supplemental?.dailyPrecipAmounts?.[supplementalIndex]);
+    const designation = this.dayDesignation(dayPeriod, nightPeriod, text, high, low, supplemental);
 
     return {
       day: this.dayLabel(dayPeriod.startTime),
@@ -937,6 +1050,7 @@ class WeatherService {
       low,
       precip: precip > 0 ? `${precip}%` : "0%",
       precipAmount,
+      designation,
       range: this.rangeWidth(low, high),
       details: {
         story: [
@@ -954,6 +1068,7 @@ class WeatherService {
     const precip = this.precipValue(period);
     const text = period?.detailedForecast || period?.shortForecast || "Tonight forecast is updating.";
     const precipAmount = this.precipAmountFromText(text) || this.formatInches(supplemental?.dailyPrecipAmounts?.[supplementalIndex]);
+    const designation = this.dayDesignation(period, null, text, temp, temp, supplemental);
 
     return {
       day: todayLabel,
@@ -964,6 +1079,7 @@ class WeatherService {
       low: temp,
       precip: precip > 0 ? `${precip}%` : "0%",
       precipAmount,
+      designation,
       range: this.rangeWidth(temp, temp),
       details: {
         story: [
@@ -1022,6 +1138,108 @@ class WeatherService {
       { icon: "aqi.svg", label: "Air Quality", value: airQuality },
       { icon: "pollen.svg", label: "Pollen & Allergens", value: pollen, type: "pollen-pills", items: pollenItems }
     ];
+  }
+
+  dayDesignation(dayPeriod, nightPeriod, text, high, low, supplemental) {
+    const dayStart = this.startOfLocalDay(dayPeriod?.startTime || nightPeriod?.startTime);
+    const dayEnd = dayStart ? new Date(dayStart.getTime() + 24 * 60 * 60 * 1000) : null;
+    const matchingHazards = (supplemental?.alertHazards || []).filter((alert) => this.alertOverlapsDay(alert, dayStart, dayEnd));
+    if (matchingHazards.some((alert) => alert.level === "alert")) return { level: "alert", label: "Alert" };
+    if (matchingHazards.some((alert) => alert.level === "impact")) return { level: "impact", label: "Impact" };
+
+    const spcOutlook = this.spcOutlookForDay(dayStart, supplemental);
+    if (spcOutlook?.level === "alert") return { level: "alert", label: "Alert" };
+    if (spcOutlook?.level === "impact") return { level: "impact", label: "Impact" };
+
+    const forecastText = `${text || ""} ${dayPeriod?.shortForecast || ""} ${nightPeriod?.shortForecast || ""}`;
+    const forecastLevel = this.hazardLevelFromText(forecastText, false);
+    if (forecastLevel === "alert") return { level: "alert", label: "Alert" };
+    if (forecastLevel === "impact") return { level: "impact", label: "Impact" };
+
+    const highValue = this.numberOrNull(high);
+    const lowValue = this.numberOrNull(low);
+    if (highValue !== null && highValue >= 110) return { level: "alert", label: "Alert" };
+    if (highValue !== null && highValue >= 100) return { level: "impact", label: "Impact" };
+    if (lowValue !== null && lowValue <= -15) return { level: "alert", label: "Alert" };
+    if (lowValue !== null && lowValue <= 5) return { level: "impact", label: "Impact" };
+
+    return null;
+  }
+
+  hazardLevelFromText(text = "", officialProduct = false) {
+    const value = String(text || "").toLowerCase();
+    const alertPatterns = [
+      /tornado (?:warning|watch)/,
+      /severe thunderstorm (?:warning|watch)/,
+      /flash flood (?:warning|watch)/,
+      /flood warning/,
+      /winter storm warning/,
+      /ice storm warning/,
+      /blizzard warning/,
+      /excessive heat warning/,
+      /extreme cold warning/,
+      /high wind warning/,
+      /tornado/,
+      /damaging winds?/,
+      /large hail/,
+      /flash flood(?:ing)?/,
+      /blizzard/,
+      /significant (?:snow|ice|icing)/
+    ];
+    if (alertPatterns.some((pattern) => pattern.test(value))) return "alert";
+
+    const impactOfficialPatterns = [
+      /heat advisory/,
+      /winter weather advisory/,
+      /wind advisory/,
+      /dense fog advisory/,
+      /cold weather advisory/,
+      /air quality alert/
+    ];
+    if (officialProduct && impactOfficialPatterns.some((pattern) => pattern.test(value))) return "impact";
+
+    const impactForecastPatterns = [
+      /strong thunderstorms?/,
+      /heavy (?:rain|rainfall|snow)/,
+      /localized flood(?:ing)?/,
+      /ponding/,
+      /accumulating snow/,
+      /freezing rain/,
+      /light icing/,
+      /dense fog/,
+      /areas of smoke/,
+      /poor air quality/,
+      /heat index values? as high as 10[0-9]/
+    ];
+    if (impactForecastPatterns.some((pattern) => pattern.test(value))) return "impact";
+
+    return "";
+  }
+
+  alertOverlapsDay(alert, dayStart, dayEnd) {
+    if (!dayStart || !dayEnd) return false;
+    const start = alert.start ? new Date(alert.start) : dayStart;
+    const end = alert.end ? new Date(alert.end) : dayEnd;
+    const startTime = Number.isNaN(start.getTime()) ? dayStart.getTime() : start.getTime();
+    const endTime = Number.isNaN(end.getTime()) ? dayEnd.getTime() : end.getTime();
+    return startTime < dayEnd.getTime() && endTime >= dayStart.getTime();
+  }
+
+  spcOutlookForDay(dayStart, supplemental) {
+    if (!dayStart) return null;
+    const today = this.startOfLocalDay(new Date());
+    if (!today) return null;
+    const dayOffset = Math.round((dayStart.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+    return (supplemental?.spcOutlooks || []).find((outlook) => outlook.dayOffset === dayOffset) || null;
+  }
+
+  startOfLocalDay(value) {
+    if (!value) return null;
+    const key = String(value).match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+    const date = key ? new Date(`${key}T00:00:00`) : new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    date.setHours(0, 0, 0, 0);
+    return date;
   }
 
   showPrecipAmount(value = "") {
@@ -2032,13 +2250,14 @@ function renderDaily(days) {
     const iconGroup = document.createElement("span");
     const icon = document.createElement("img");
     const precip = document.createElement("span");
+    const designation = document.createElement("span");
     const iconLine = document.createElement("span");
     const condition = document.createElement("span");
     const low = document.createElement("span");
     const track = document.createElement("span");
     const high = document.createElement("span");
     const chevron = document.createElement("span");
-    const detailPanel = renderDailyDetailPanel(day.details, index);
+    const detailPanel = renderDailyDetailPanel(day.details, index, day.designation);
 
     card.className = "daily-day-card";
     row.className = "daily-row";
@@ -2057,6 +2276,7 @@ function renderDaily(days) {
     track.className = "daily-range";
     high.className = "daily-high";
     precip.className = "daily-rain";
+    designation.className = "day-designation";
     chevron.className = "day-chevron";
     chevron.setAttribute("aria-hidden", "true");
 
@@ -2068,6 +2288,14 @@ function renderDaily(days) {
       dayName.appendChild(dayNumber);
     }
     setIcon(icon, day.icon, "");
+    if (day.designation?.level) {
+      card.classList.add(`is-${day.designation.level}-day`);
+      row.classList.add("has-designation");
+      designation.textContent = day.designation.label;
+      designation.classList.add(day.designation.level);
+    } else {
+      designation.hidden = true;
+    }
     if (isHorizontal) {
       const precipParts = dailyPrecipParts(day);
       precip.replaceChildren();
@@ -2103,8 +2331,9 @@ function renderDaily(days) {
     high.textContent = formatTemp(day.high);
 
     if (isHorizontal) {
-      row.append(iconGroup, high, track, low, precip, dayName, chevron);
+      row.append(designation, iconGroup, high, track, low, precip, dayName, chevron);
     } else {
+      if (day.designation?.level) row.append(designation);
       row.append(dayName, iconGroup, low, track, high, chevron);
     }
     row.addEventListener("click", () => togglePanel(row, detailPanel));
@@ -2120,11 +2349,12 @@ function renderDaily(days) {
   horizontalPanels.forEach((panel) => elements.dailyForecast.appendChild(panel));
 }
 
-function renderDailyDetailPanel(details, index) {
+function renderDailyDetailPanel(details, index, designation = null) {
   const panel = document.createElement("section");
   const story = document.createElement("div");
   const metricHeader = document.createElement("h3");
   const metrics = document.createElement("div");
+  const designationNotice = designation?.level ? renderDesignationNotice(designation) : null;
   panel.className = "daily-detail-panel";
   panel.id = `dailyDetail${index}`;
   panel.hidden = true;
@@ -2179,7 +2409,9 @@ function renderDailyDetailPanel(details, index) {
     metrics.appendChild(metric);
   });
 
-  panel.append(story, metricHeader, metrics);
+  if (designationNotice) panel.appendChild(designationNotice);
+  panel.append(story);
+  panel.append(metricHeader, metrics);
   return panel;
 }
 
@@ -2213,11 +2445,36 @@ function dailyPrecipParts(day) {
   };
 }
 
+function renderDesignationNotice(designation) {
+  const notice = document.createElement("aside");
+  const badge = document.createElement("span");
+  const copy = document.createElement("span");
+  const level = designation?.level === "alert" ? "alert" : "impact";
+  notice.className = `day-designation-notice ${level}`;
+  badge.className = `day-designation ${level}`;
+  badge.textContent = level === "alert" ? "Alert" : "Impact";
+  copy.textContent = level === "alert"
+    ? "Potentially dangerous or high-impact weather is expected. Stay aware and be ready to take action."
+    : "Weather may significantly affect your plans. Stay weather-aware and prepare for possible disruptions.";
+  notice.append(badge, copy);
+  return notice;
+}
+
 function togglePanel(button, panel, force) {
   const shouldOpen = typeof force === "boolean" ? force : panel.hidden;
+  const dailyCard = button.closest?.(".daily-day-card");
+  const isHorizontalDaily = Boolean(dailyCard && elements.dailyForecast?.classList.contains("is-horizontal"));
+  if (isHorizontalDaily && shouldOpen) {
+    elements.dailyForecast.querySelectorAll(".daily-row[aria-expanded='true']").forEach((row) => {
+      if (row === button) return;
+      row.setAttribute("aria-expanded", "false");
+      row.closest?.(".daily-day-card")?.classList.remove("is-open");
+      const controlledPanel = document.getElementById(row.getAttribute("aria-controls"));
+      if (controlledPanel) controlledPanel.hidden = true;
+    });
+  }
   panel.hidden = !shouldOpen;
   button.setAttribute("aria-expanded", String(shouldOpen));
-  const dailyCard = button.closest?.(".daily-day-card");
   if (dailyCard) dailyCard.classList.toggle("is-open", shouldOpen);
 }
 
