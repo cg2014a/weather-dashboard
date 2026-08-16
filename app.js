@@ -2,6 +2,7 @@
 const DEFAULT_LOCATION = { label: "Olathe, KS", query: "Olathe, KS", city: "Olathe", state: "KS", lat: 38.9, lon: -94.84 };
 const LOCATION_STORAGE_KEY = "skystation-location";
 const AUTO_LOCATION_STORAGE_KEY = "skystation-auto-location";
+const DAILY_LAYOUT_STORAGE_KEY = "skystation-daily-layout";
 const AIRNOW_KEY_STORAGE_KEY = "skystation-airnow-key";
 const PRECIP_DISPLAY_THRESHOLD = 20;
 const nwsPointUrl = ({ lat, lon }) => `https://api.weather.gov/points/${lat},${lon}`;
@@ -1202,7 +1203,8 @@ class WeatherService {
   dewPointComfortLabel(value) {
     const dewPoint = this.numberOrNull(value);
     if (dewPoint === null) return "";
-    if (dewPoint >= 70) return "Miserable";
+    if (dewPoint >= 75) return "Miserable";
+    if (dewPoint >= 70) return "Sweltering";
     if (dewPoint >= 65) return "Muggy";
     if (dewPoint >= 60) return "Sticky";
     if (dewPoint >= 50) return "Pleasant";
@@ -1212,7 +1214,8 @@ class WeatherService {
   dewPointComfortTone(value) {
     const dewPoint = this.numberOrNull(value);
     if (dewPoint === null) return "";
-    if (dewPoint >= 70) return "miserable";
+    if (dewPoint >= 75) return "miserable";
+    if (dewPoint >= 70) return "sweltering";
     if (dewPoint >= 65) return "muggy";
     if (dewPoint >= 60) return "sticky";
     if (dewPoint >= 50) return "pleasant";
@@ -1402,6 +1405,8 @@ let currentHealthDetails = [];
 let dashboardRequestId = 0;
 let locationRequestId = 0;
 let lastHourlyHours = [];
+let lastDailyDays = [];
+let dailyLayoutMode = loadDailyLayoutMode();
 
 function loadSavedLocation() {
   try {
@@ -1424,6 +1429,19 @@ function loadAutoLocationEnabled() {
 function saveAutoLocationEnabled(value) {
   autoLocationEnabled = Boolean(value);
   localStorage.setItem(AUTO_LOCATION_STORAGE_KEY, String(autoLocationEnabled));
+}
+
+function loadDailyLayoutMode() {
+  try {
+    return localStorage.getItem(DAILY_LAYOUT_STORAGE_KEY) === "horizontal" ? "horizontal" : "vertical";
+  } catch {
+    return "vertical";
+  }
+}
+
+function saveDailyLayoutMode(value) {
+  dailyLayoutMode = value === "horizontal" ? "horizontal" : "vertical";
+  localStorage.setItem(DAILY_LAYOUT_STORAGE_KEY, dailyLayoutMode);
 }
 
 function isValidLocation(location) {
@@ -1494,7 +1512,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "dailyForecast",
@@ -1995,7 +2013,11 @@ function renderHourly(hours) {
 }
 
 function renderDaily(days) {
+  lastDailyDays = Array.isArray(days) ? days : [];
   elements.dailyForecast.replaceChildren();
+  elements.dailyForecast.classList.toggle("is-horizontal", dailyLayoutMode === "horizontal");
+  const isHorizontal = dailyLayoutMode === "horizontal";
+  const horizontalPanels = [];
   const lowValues = days.map((day) => safeNumber(day.low)).filter(Number.isFinite);
   const highValues = days.map((day) => safeNumber(day.high)).filter(Number.isFinite);
   const weekLow = lowValues.length ? Math.min(...lowValues) : null;
@@ -2020,6 +2042,7 @@ function renderDaily(days) {
 
     card.className = "daily-day-card";
     row.className = "daily-row";
+    if (dailyLayoutMode === "horizontal") row.classList.add("daily-chart-day");
     row.type = "button";
     row.id = `dailyRow${index}`;
     row.style.animationDelay = `${index * 45}ms`;
@@ -2045,10 +2068,29 @@ function renderDaily(days) {
       dayName.appendChild(dayNumber);
     }
     setIcon(icon, day.icon, "");
-    precip.textContent = dailyPrecipText(day);
-    precip.hidden = !dailyPrecipText(day);
+    if (isHorizontal) {
+      const precipParts = dailyPrecipParts(day);
+      precip.replaceChildren();
+      if (precipParts.percent) {
+        const percent = document.createElement("span");
+        percent.className = "daily-rain-percent";
+        percent.textContent = precipParts.percent;
+        precip.appendChild(percent);
+      }
+      if (precipParts.amount) {
+        const amount = document.createElement("span");
+        amount.className = "daily-rain-amount";
+        amount.textContent = precipParts.amount;
+        precip.appendChild(amount);
+      }
+      precip.hidden = !precipParts.percent && !precipParts.amount;
+    } else {
+      precip.textContent = dailyPrecipText(day);
+      precip.hidden = !dailyPrecipText(day);
+    }
     condition.textContent = day.condition;
-    iconLine.append(icon, precip);
+    iconLine.append(icon);
+    if (!isHorizontal) iconLine.append(precip);
     iconGroup.append(iconLine, condition);
     low.textContent = formatTemp(day.low);
     const dayLow = safeNumber(day.low);
@@ -2060,11 +2102,22 @@ function renderDaily(days) {
     track.style.setProperty("--range-width", `${rangeWidth}%`);
     high.textContent = formatTemp(day.high);
 
-    row.append(dayName, iconGroup, low, track, high, chevron);
+    if (isHorizontal) {
+      row.append(iconGroup, high, track, low, precip, dayName, chevron);
+    } else {
+      row.append(dayName, iconGroup, low, track, high, chevron);
+    }
     row.addEventListener("click", () => togglePanel(row, detailPanel));
-    card.append(row, detailPanel);
+    if (isHorizontal) {
+      card.append(row);
+      horizontalPanels.push(detailPanel);
+    } else {
+      card.append(row, detailPanel);
+    }
     elements.dailyForecast.appendChild(card);
   });
+
+  horizontalPanels.forEach((panel) => elements.dailyForecast.appendChild(panel));
 }
 
 function renderDailyDetailPanel(details, index) {
@@ -2151,6 +2204,15 @@ function dailyPrecipText(day) {
   return [percent, amount].filter(Boolean).join(" / ");
 }
 
+function dailyPrecipParts(day) {
+  const amount = day.precipAmount || "";
+  const percent = shouldShowPrecipPercent(day.precip) || amount ? day.precip : "";
+  return {
+    percent,
+    amount: amount || ""
+  };
+}
+
 function togglePanel(button, panel, force) {
   const shouldOpen = typeof force === "boolean" ? force : panel.hidden;
   panel.hidden = !shouldOpen;
@@ -2180,6 +2242,7 @@ function toggleSettings(force) {
   elements.settingsToggle.setAttribute("aria-expanded", String(shouldOpen));
   if (shouldOpen) {
     if (elements.autoLocationToggle) elements.autoLocationToggle.checked = autoLocationEnabled;
+    if (elements.dailyLayoutToggle) elements.dailyLayoutToggle.checked = dailyLayoutMode === "horizontal";
     elements.locationInput.value = currentLocation.query || currentLocation.label;
     elements.locationStatus.textContent = "";
     elements.locationInput.focus();
@@ -2233,6 +2296,14 @@ function bindInteractions() {
     elements.locationStatus.textContent = autoLocationEnabled
       ? "Current location will be used on load and refresh if allowed."
       : "Automatic location is off. The ZIP or city above will be used.";
+  });
+  elements.dailyLayoutToggle.addEventListener("change", () => {
+    saveDailyLayoutMode(elements.dailyLayoutToggle.checked ? "horizontal" : "vertical");
+    elements.dailyForecast.classList.toggle("is-horizontal", dailyLayoutMode === "horizontal");
+    renderDaily(lastDailyDays);
+    elements.locationStatus.textContent = dailyLayoutMode === "horizontal"
+      ? "7-Day Forecast is using the horizontal chart view."
+      : "7-Day Forecast is using the vertical list view.";
   });
   elements.locationForm.addEventListener("submit", handleLocationSubmit);
   bindPullToRefresh();
@@ -2314,6 +2385,9 @@ function startApp() {
 }
 
 document.addEventListener("DOMContentLoaded", startApp);
+
+
+
 
 
 

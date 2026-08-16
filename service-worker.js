@@ -1,4 +1,4 @@
-const CACHE_NAME = "skystation-v1-91";
+﻿const CACHE_NAME = "skystation-v1-97";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -64,3 +64,10 @@ self.addEventListener("fetch", (event) => {
       }))
   );
 });
+
+
+
+
+
+
+

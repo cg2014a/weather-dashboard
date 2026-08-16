@@ -47,7 +47,6 @@
             </div>
           </section>
           <section class="expanded-weather" id="expandedWeather" hidden>
-            <section class="quick-grid" id="detailsGrid" aria-label="Weather details"></section>
             <section class="forecast-card hourly-panel" aria-labelledby="hourly-title">
               <div class="section-heading">
                 <h2 id="hourly-title">Hourly Forecast</h2>
@@ -55,6 +54,7 @@
               </div>
               <div class="hourly-strip" id="hourlyForecast" tabindex="0"></div>
             </section>
+            <section class="quick-grid" id="detailsGrid" aria-label="Weather details"></section>
           </section>
         </section>
 
@@ -65,7 +65,6 @@
             <p id="alertBody"></p>
             <div class="alert-details" id="alertDetails" hidden></div>
           </div>
-          <span class="alert-chevron" aria-hidden="true">⌄</span>
         </button>
 
         <section class="precip-card" id="precipCard" aria-label="Precipitation" hidden>
@@ -139,6 +138,14 @@
           <input id="autoLocationToggle" type="checkbox" checked />
           <span class="toggle-track" aria-hidden="true"></span>
         </label>
+        <label class="location-toggle">
+          <span>
+            <strong>Horizontal 7-Day Forecast</strong>
+            <small>Switch the 7-day forecast from the standard vertical list to a compact chart view.</small>
+          </span>
+          <input id="dailyLayoutToggle" type="checkbox" />
+          <span class="toggle-track" aria-hidden="true"></span>
+        </label>
         <label for="locationInput">ZIP or City, State</label>
         <div class="location-entry">
           <input id="locationInput" name="location" type="text" autocomplete="postal-code" placeholder="66062 or Kansas City, MO" />
@@ -150,6 +157,8 @@
     <script src="app.js"></script>
   </body>
 </html>
+
+
 
 
 
