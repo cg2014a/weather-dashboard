@@ -2329,7 +2329,7 @@ function renderDaily(days) {
       if (precipParts.amount) {
         const amount = document.createElement("span");
         amount.className = "daily-rain-amount";
-        amount.textContent = precipParts.amount;
+        appendDailyPrecipAmount(amount, precipParts.amount);
         precip.appendChild(amount);
       }
       precip.hidden = !precipParts.percent && !precipParts.amount;
@@ -2458,7 +2458,7 @@ function dailyPrecipText(day) {
 }
 
 function dailyPrecipParts(day) {
-  const amount = compactDailyPrecipAmount(day.precipAmount || "");
+  const amount = day.precipAmount || "";
   const percent = shouldShowPrecipPercent(day.precip) || amount ? day.precip : "";
   return {
     percent,
@@ -2466,9 +2466,18 @@ function dailyPrecipParts(day) {
   };
 }
 
-function compactDailyPrecipAmount(amount) {
+function appendDailyPrecipAmount(element, amount) {
   const text = String(amount || "").trim();
-  return /\d(?:\.\d+)?\s*-\s*\d/i.test(text) ? text.replace(/\s*in$/i, "") : text;
+  const range = text.match(/^(.+?-\s*)(.+?\s*in)$/i);
+  if (!range) {
+    element.textContent = text;
+    return;
+  }
+  const firstLine = document.createElement("span");
+  const secondLine = document.createElement("span");
+  firstLine.textContent = range[1].trimEnd();
+  secondLine.textContent = range[2].trim();
+  element.append(firstLine, secondLine);
 }
 
 function renderDesignationNotice(designation) {
