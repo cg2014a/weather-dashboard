@@ -2458,12 +2458,17 @@ function dailyPrecipText(day) {
 }
 
 function dailyPrecipParts(day) {
-  const amount = day.precipAmount || "";
+  const amount = compactDailyPrecipAmount(day.precipAmount || "");
   const percent = shouldShowPrecipPercent(day.precip) || amount ? day.precip : "";
   return {
     percent,
     amount: amount || ""
   };
+}
+
+function compactDailyPrecipAmount(amount) {
+  const text = String(amount || "").trim();
+  return /\d(?:\.\d+)?\s*-\s*\d/i.test(text) ? text.replace(/\s*in$/i, "") : text;
 }
 
 function renderDesignationNotice(designation) {
