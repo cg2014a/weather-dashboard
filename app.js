@@ -99,14 +99,14 @@ class WeatherService {
     const properties = point.properties;
     if (!properties?.forecast && !properties?.forecastHourly) throw new Error("NWS forecast links unavailable.");
 
-    const [forecast, hourly, alerts, observation, airQuality, supplemental, spcOutlooks] = (await Promise.allSettled([
+    const spcOutlooksPromise = this.getSpcOutlooks(location);
+    const [forecast, hourly, alerts, observation, airQuality, supplemental] = (await Promise.allSettled([
       properties.forecast ? this.fetchJson(properties.forecast) : Promise.resolve(null),
       properties.forecastHourly ? this.fetchJson(properties.forecastHourly) : Promise.resolve(null),
       this.fetchJson(nwsAlertsUrl(location)),
       properties.observationStations ? this.getLatestObservation(properties.observationStations) : Promise.resolve(null),
       this.getAirQuality(location),
-      this.getSupplementalWeather(location),
-      this.getSpcOutlooks(location)
+      this.getSupplementalWeather(location)
     ])).map((result) => this.settledValue(result));
 
     const hourlyPeriods = hourly?.properties?.periods || [];
@@ -122,7 +122,7 @@ class WeatherService {
       airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "Checking",
       dailyAirQuality: airQuality?.dailyAirQuality || [],
       alertHazards: this.mapAlertHazards(alerts || { features: [] }),
-      spcOutlooks: spcOutlooks || [],
+      spcOutlooks: [],
       pollen: basePollen
     };
     enrichedSupplemental.pollen = {
@@ -131,6 +131,12 @@ class WeatherService {
     };
     const current = this.mapCurrent(currentPeriod, dailyPeriods, hourlyPeriods, observation, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental);
+    const dailyOutlookPromise = spcOutlooksPromise
+      .then((spcOutlooks) => this.mapDaily(dailyPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
+      .catch((error) => {
+        console.warn("SPC outlooks unavailable.", error);
+        return null;
+      });
 
     return {
       location: { city: location.label },
@@ -141,15 +147,16 @@ class WeatherService {
       details: this.mapDetails(currentPeriod, observation, precipitation, enrichedSupplemental),
       alert: this.mapAlert(alerts || { features: [] }),
       hourly: this.mapHourly(hourlyPeriods),
-      daily: this.mapDaily(dailyPeriods, enrichedSupplemental)
+      daily: this.mapDaily(dailyPeriods, enrichedSupplemental),
+      dailyOutlookPromise
     };
   }
 
   async getFallbackWeather(location) {
-    const [airQuality, supplemental, spcOutlooks] = (await Promise.allSettled([
+    const spcOutlooksPromise = this.getSpcOutlooks(location);
+    const [airQuality, supplemental] = (await Promise.allSettled([
       this.getAirQuality(location),
-      this.getSupplementalWeather(location),
-      this.getSpcOutlooks(location)
+      this.getSupplementalWeather(location)
     ])).map((result) => this.settledValue(result));
     if (!supplemental) throw new Error("Supplemental weather unavailable.");
 
@@ -162,7 +169,7 @@ class WeatherService {
       airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "Checking",
       dailyAirQuality: airQuality?.dailyAirQuality || [],
       alertHazards: [],
-      spcOutlooks: spcOutlooks || [],
+      spcOutlooks: [],
       pollen: {
         ...basePollen,
         health: this.mapHealthRisks({ ...supplemental, pollen: basePollen }, airQuality)
@@ -170,6 +177,12 @@ class WeatherService {
     };
     const current = this.mapCurrent(currentPeriod, forecastPeriods, hourlyPeriods, null, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental);
+    const dailyOutlookPromise = spcOutlooksPromise
+      .then((spcOutlooks) => this.mapDaily(forecastPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
+      .catch((error) => {
+        console.warn("SPC outlooks unavailable.", error);
+        return null;
+      });
 
     return {
       location: { city: location.label },
@@ -180,7 +193,8 @@ class WeatherService {
       details: this.mapDetails(currentPeriod, null, precipitation, enrichedSupplemental),
       alert: null,
       hourly: this.mapHourly(hourlyPeriods),
-      daily: this.mapDaily(forecastPeriods, enrichedSupplemental)
+      daily: this.mapDaily(forecastPeriods, enrichedSupplemental),
+      dailyOutlookPromise
     };
   }
 
@@ -2658,6 +2672,12 @@ async function renderDashboard() {
   renderAlert(data.alert);
   renderHourly(data.hourly);
   renderDaily(data.daily);
+  if (data.dailyOutlookPromise) {
+    data.dailyOutlookPromise.then((daily) => {
+      if (requestId !== dashboardRequestId || !Array.isArray(daily)) return;
+      renderDaily(daily);
+    });
+  }
   animateTemperatureRefresh();
 }
 
