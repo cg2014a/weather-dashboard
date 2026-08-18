@@ -98,18 +98,22 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .details-toggle { display: inline-flex; align-items: center; gap: 8px; margin-top: 5px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: .76rem; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; cursor: pointer; }
 .details-toggle span { width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .18s ease; }
 .details-toggle[aria-expanded="true"] span { transform: rotate(225deg) translateY(-2px); }
+.current-stats-panel { display: grid; align-content: start; gap: 8px; min-width: 0; }
 .current-stats { display: grid; align-content: start; overflow: hidden; border: 1px solid #cfd7e2; border-radius: 16px; background: #f7f9fd; box-shadow: inset 0 1px 0 rgba(255,255,255,.75); }
-.stat-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 43px; padding: 8px 10px; border-bottom: 1px solid #d5dde8; background: rgba(255,255,255,.18); font-size: .98rem; }
+.current-comfort { display: flex; justify-content: flex-end; min-height: 25px; padding-right: 2px; }
+.current-comfort[hidden] { display: none; }
+.current-comfort .dew-status { min-height: 25px; padding: 4px 12px; font-size: .82rem; font-weight: 700; }
+.stat-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 50px; padding: 10px 12px; border-bottom: 1px solid #d5dde8; background: rgba(255,255,255,.18); font-size: 1.03rem; }
 .stat-row:last-child { border-bottom: 0; }
 .stat-row span { color: #111; }
 .stat-label { display: inline-flex; align-items: center; gap: 7px; min-width: 0; color: #111 !important; font-size: inherit; font-weight: 400; line-height: normal; }
-.stat-label img { width: 16px; height: 16px; flex: 0 0 auto; }
+.stat-label img { width: 18px; height: 18px; flex: 0 0 auto; }
 .stat-label-stack { display: grid; gap: 1px; min-width: 0; }
 .stat-sublabel { color: #111; font-size: inherit; font-weight: 400; line-height: 1.05; }
 .stat-value { display: grid; justify-items: end; gap: 1px; min-width: 0; text-align: right; }
 .stat-value.inline-status { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; }
 .stat-value.inline-detail { display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; }
-.stat-value strong { font-size: 1rem; font-weight: 850; text-align: right; }
+.stat-value strong { font-size: 1.04rem; font-weight: 850; text-align: right; }
 .stat-value small { color: var(--muted); font-size: .72rem; font-weight: 400; line-height: 1.12; white-space: nowrap; }
 .precip-stat .stat-value small { color: var(--text); font-size: .78rem; font-weight: 760; }
 .stat-detail-line { display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; }
@@ -118,9 +122,13 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .dew-status.pleasant { background: #dcfce7; color: #166534; }
 .dew-status.sticky { background: #fef3c7; color: #854d0e; }
 .dew-status.muggy { background: #ffedd5; color: #c2410c; }
-.dew-status.sweltering { background: #ffe0d6; color: #b91c1c; }
+.dew-status.oppressive { background: #ffe0d6; color: #b91c1c; }
 .dew-status.miserable { background: #fee2e2; color: #991b1b; }
 .stat-row.warning strong { color: var(--orange); }
+.stat-row.status-only { grid-template-columns: auto minmax(0, 1fr); }
+.stat-row.status-only .stat-label { justify-content: flex-start; }
+.stat-row.status-only .stat-value { justify-items: end; }
+.humidity-stat.status-only .dew-status { min-height: 25px; padding: 4px 11px; font-size: .82rem; font-weight: 700; }
 
 .precip-card { display: grid; grid-template-columns: minmax(112px, .88fr) minmax(170px, 1.45fr); align-items: center; gap: 12px; padding: 11px 12px; }
 .precip-card[hidden] { display: none; }
@@ -282,13 +290,17 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .sun-times strong { display: block; margin-top: 1px; color: var(--text); font-size: .66rem; line-height: 1; white-space: nowrap; }
 .quick-label { display: block; color: var(--muted); font-size: .64rem; font-weight: 700; line-height: 1.1; }
 .quick-value { display: block; margin-top: 3px; font-size: .86rem; font-weight: 820; line-height: 1.1; }
+.quick-item .dew-status { display: inline-flex; justify-self: start; width: max-content; margin-top: 6px; }
 .hourly-strip { max-width: 100%; min-width: 0; overflow: hidden; padding: 2px 0 4px; }
 .hourly-empty { margin: 0; color: var(--muted); font-size: .82rem; }
 .hourly-chart { min-width: 0; animation: forecastIn 420ms ease both; }
 .hourly-bar-chart { position: relative; display: grid; grid-template-columns: repeat(var(--hour-count), minmax(0, 1fr)); align-items: end; min-height: 196px; padding: 10px 8px 10px; border-radius: 18px; background: #fff; box-shadow: inset 0 0 0 1px rgba(190, 204, 219, .72); }
-.hourly-column { position: relative; display: grid; grid-template-rows: 18px 28px 22px 86px 16px 16px 14px; justify-items: center; min-width: 0; padding: 0 4px; }
+.hourly-column { position: relative; display: grid; grid-template-rows: 18px 28px 22px 86px 16px 16px 14px; justify-items: center; min-width: 0; padding: 0 4px; border: 0; border-radius: 12px; background: transparent; color: inherit; font: inherit; cursor: pointer; transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
 .hourly-column + .hourly-column { border-left: 1px solid rgba(141, 160, 181, .24); }
 .hourly-column-graph { position: relative; width: 100%; height: 86px; overflow: hidden; border-radius: 12px; background: linear-gradient(180deg, rgba(249, 171, 0, .12), rgba(26, 115, 232, .09)); }
+.hourly-column.is-active { background: rgba(26, 115, 232, .055); box-shadow: inset 0 0 0 1px rgba(26, 115, 232, .22); }
+.hourly-column.is-active .hourly-time-label { color: var(--blue); font-weight: 850; }
+.hourly-column:focus-visible { outline: 3px solid rgba(26, 115, 232, .26); outline-offset: 2px; }
 .hourly-temp-bar { position: absolute; left: 50%; top: var(--temp-top); width: min(38px, 76%); height: 14px; border: 2px solid #fff; border-radius: 999px; background: linear-gradient(90deg, #f9ab00, #f4c75b); box-shadow: 0 4px 9px rgba(37, 54, 74, .22); transform: translate(-50%, -50%); }
 .hourly-precip-layer { position: absolute; grid-column: 1 / -1; grid-row: 1 / -1; left: 8px; right: 8px; top: 78px; z-index: 2; height: 86px; pointer-events: none; }
 .hourly-precip-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -382,7 +394,7 @@ body.pollen-open { overflow: hidden; }
   .current-content { grid-template-columns: minmax(0, .88fr) minmax(138px, .72fr); gap: 12px; padding: 22px 14px 16px; }
   .current-outlook { margin-left: 14px; margin-right: 14px; }
   .expanded-weather { margin-left: 12px; margin-right: 12px; }
-  .current-stats { margin-top: 0; }
+  .current-stats-panel { margin-top: 0; gap: 6px; }
   .temp-row { gap: 10px; }
   .hero-icon { width: 56px; height: 56px; }
   .current-temp { font-size: clamp(3.7rem, 16vw, 4.6rem); }
@@ -393,11 +405,14 @@ body.pollen-open { overflow: hidden; }
   .allergen-badge { font-size: .62rem; }
   .allergen-badge strong { font-size: .66rem; }
   .allergen-badge img { width: 13px; height: 13px; }
-  .stat-row { min-height: 35px; gap: 7px; padding: 6px 8px; font-size: .78rem; }
+  .stat-row { min-height: 42px; gap: 7px; padding: 8px 9px; font-size: .84rem; }
   .stat-label { gap: 5px; font-size: inherit; }
-  .stat-label img { width: 14px; height: 14px; }
+  .current-comfort { min-height: 23px; }
+  .current-comfort .dew-status { min-height: 23px; padding: 3px 10px; font-size: .76rem; }
+  .humidity-stat.status-only .dew-status { min-height: 23px; padding: 3px 9px; font-size: .76rem; }
+  .stat-label img { width: 15px; height: 15px; }
   .stat-label-stack { gap: 0; }
-  .stat-value strong { font-size: .82rem; }
+  .stat-value strong { font-size: .88rem; }
   .stat-value small { font-size: .68rem; }
   .precip-stat .stat-value small { font-size: .72rem; }
   .daily-row { grid-template-columns: 34px minmax(128px,1.4fr) 36px minmax(42px,1fr) 36px; gap: 6px; font-size: .8rem; }

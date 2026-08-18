@@ -146,7 +146,7 @@ class WeatherService {
       precipitation,
       details: this.mapDetails(currentPeriod, observation, precipitation, enrichedSupplemental),
       alert: this.mapAlert(alerts || { features: [] }),
-      hourly: this.mapHourly(hourlyPeriods),
+      hourly: this.mapHourly(hourlyPeriods, enrichedSupplemental),
       daily: this.mapDaily(dailyPeriods, enrichedSupplemental),
       dailyOutlookPromise
     };
@@ -192,7 +192,7 @@ class WeatherService {
       precipitation,
       details: this.mapDetails(currentPeriod, null, precipitation, enrichedSupplemental),
       alert: null,
-      hourly: this.mapHourly(hourlyPeriods),
+      hourly: this.mapHourly(hourlyPeriods, enrichedSupplemental),
       daily: this.mapDaily(forecastPeriods, enrichedSupplemental),
       dailyOutlookPromise
     };
@@ -704,12 +704,12 @@ class WeatherService {
       },
       {
         icon: "humidity.svg",
-        label: "Humidity",
-        subLabel: "Dew Point",
-        value: `${humidity} / ${this.formatMaybeTemp(dewPoint)}`,
+        label: "",
+        value: "",
         status: this.dewPointComfortLabel(dewPoint),
         statusTone: this.dewPointComfortTone(dewPoint),
-        className: "humidity-stat"
+        className: "humidity-stat status-only",
+        statusOnly: true
       }
     ];
   }
@@ -877,9 +877,19 @@ class WeatherService {
 
   mapDetails(period, observation, precipitation, supplemental) {
     const wind = `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || this.formatOpenMeteoWind(supplemental) || "0 mph";
+    const windGust = this.readWindGust(period, supplemental);
+    const humidity = this.readHumidity(observation, supplemental, period);
+    const dewPoint = this.dewPointFahrenheit(observation, supplemental);
     const pollen = supplemental?.pollen || this.emptyPollen();
     return [
-      { icon: "wind.svg", label: "Wind / Gust", value: `${wind} / ${this.readWindGust(period, supplemental)}` },
+      { icon: "wind.svg", label: "Wind", value: wind },
+      { icon: "wind.svg", label: "Wind Gust", value: windGust },
+      { icon: "humidity.svg", label: "Humidity", value: humidity },
+      {
+        icon: "humidity.svg",
+        label: "Dew Point",
+        value: this.formatMaybeTemp(dewPoint)
+      },
       { icon: "aqi.svg", label: "Air Quality", value: supplemental?.airQualityLabel || "Checking" },
       { icon: "uv.svg", label: "UV Index", value: this.formatUvIndex(supplemental?.uvIndex) },
       { icon: "visibility.svg", label: "Visibility", value: this.readDistance(this.firstNumber(observation?.properties?.visibility?.value, supplemental?.visibility)) },
@@ -1020,15 +1030,28 @@ class WeatherService {
     });
   }
 
-  mapHourly(periods) {
-    return periods.slice(0, 12).map((period) => ({
-      time: period.startTime,
-      icon: this.iconForForecast(period.shortForecast, period.isDaytime),
-      temp: period.temperature,
-      precip: `${this.precipValue(period)}%`,
-      wind: period.windSpeed || "0 mph",
-      windDirection: period.windDirection || ""
-    }));
+  mapHourly(periods, supplemental = {}) {
+    return periods.slice(0, 12).map((period, index) => {
+      const windSpeed = this.firstNumber(supplemental?.hourlyWindSpeeds?.[index]);
+      const windDirection = this.windDirectionLabel(this.firstNumber(supplemental?.hourlyWindDirections?.[index])) || period.windDirection || "";
+      const windGust = this.firstNumber(supplemental?.hourlyWindGusts?.[index]);
+      const humidity = this.firstNumber(supplemental?.hourlyHumidity?.[index]);
+      const dewPoint = this.firstNumber(supplemental?.hourlyDewPoints?.[index]);
+      const uvIndex = this.firstNumber(supplemental?.hourlyUvIndexes?.[index], supplemental?.uvIndex);
+      return {
+        time: period.startTime,
+        icon: this.iconForForecast(period.shortForecast, period.isDaytime),
+        temp: period.temperature,
+        precip: `${this.precipValue(period, supplemental)}%`,
+        wind: windSpeed === null ? period.windSpeed || "0 mph" : `${Math.round(windSpeed)} mph`,
+        windDirection,
+        windGust: windGust === null ? "" : `${Math.round(windGust)} mph`,
+        humidity: humidity === null ? "" : this.readPercent(humidity),
+        dewPoint,
+        dewPointLabel: this.formatMaybeTemp(dewPoint),
+        uvIndex: this.formatUvIndex(uvIndex)
+      };
+    });
   }
 
   mapDaily(periods, supplemental) {
@@ -1439,7 +1462,7 @@ class WeatherService {
     const dewPoint = this.numberOrNull(value);
     if (dewPoint === null) return "";
     if (dewPoint >= 75) return "Miserable";
-    if (dewPoint >= 70) return "Sweltering";
+    if (dewPoint >= 70) return "Oppressive";
     if (dewPoint >= 65) return "Muggy";
     if (dewPoint >= 60) return "Sticky";
     if (dewPoint >= 50) return "Pleasant";
@@ -1450,7 +1473,7 @@ class WeatherService {
     const dewPoint = this.numberOrNull(value);
     if (dewPoint === null) return "";
     if (dewPoint >= 75) return "miserable";
-    if (dewPoint >= 70) return "sweltering";
+    if (dewPoint >= 70) return "oppressive";
     if (dewPoint >= 65) return "muggy";
     if (dewPoint >= 60) return "sticky";
     if (dewPoint >= 50) return "pleasant";
@@ -1641,6 +1664,8 @@ let dashboardRequestId = 0;
 let locationRequestId = 0;
 let lastHourlyHours = [];
 let lastDailyDays = [];
+let activeDashboardData = null;
+let activeHourlyIndex = 0;
 let dailyLayoutMode = loadDailyLayoutMode();
 
 function loadSavedLocation() {
@@ -1749,7 +1774,7 @@ function cacheElements() {
   [
     "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
-    "condition", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
+    "condition", "outlookIcon", "feelsLike", "currentStats", "currentComfort", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "dailyForecast",
     "expandedWeather", "currentNarrative", "radarPreviewCard", "radarPreviewFrame", "radarFrame", "radarPreviewLabel", "radarPanelLabel", "radarToggle", "radarPanel", "radarClose", "radarTime",
     "pollenPanel", "pollenClose", "pollenList", "pollenSummary"
@@ -1784,7 +1809,17 @@ function renderCurrentWeather(data) {
 
 function renderSummaryStats(stats) {
   elements.currentStats.replaceChildren();
-  stats.forEach((item) => {
+  elements.currentComfort.replaceChildren();
+  const comfort = stats.find((item) => item.statusOnly && item.status);
+  const statRows = stats.filter((item) => !item.statusOnly);
+  if (comfort) {
+    const status = document.createElement("span");
+    status.className = comfort.statusTone ? `dew-status ${comfort.statusTone}` : "dew-status";
+    status.textContent = comfort.status;
+    elements.currentComfort.appendChild(status);
+  }
+  elements.currentComfort.hidden = !comfort;
+  statRows.forEach((item) => {
     const row = document.createElement("div");
     const icon = document.createElement("img");
     const text = document.createElement("span");
@@ -1799,7 +1834,9 @@ function renderSummaryStats(stats) {
     setIcon(icon, item.icon || "weather-cloud.svg", "");
     label.textContent = item.label;
     value.textContent = item.value;
-    if (item.subLabel) {
+    if (!item.label) {
+      text.append(icon);
+    } else if (item.subLabel) {
       const labelStack = document.createElement("span");
       const subLabel = document.createElement("small");
       labelStack.className = "stat-label-stack";
@@ -1810,7 +1847,7 @@ function renderSummaryStats(stats) {
     } else {
       text.append(icon, label);
     }
-    valueWrap.appendChild(value);
+    if (!item.statusOnly) valueWrap.appendChild(value);
     if (item.subvalue || item.status) {
       const detail = document.createElement("small");
       detail.className = "stat-detail-line";
@@ -1832,7 +1869,7 @@ function renderSummaryStats(stats) {
   });
 }
 
-function renderDetails(details) {
+function renderDetails(details, options = {}) {
   elements.detailsGrid.replaceChildren();
   currentPollenDetails = [];
   currentHealthDetails = [];
@@ -1877,10 +1914,47 @@ function renderDetails(details) {
     } else {
       value.textContent = item.value;
       card.append(icon, label, value);
+      if (item.status) {
+        const status = document.createElement("span");
+        status.className = item.statusTone ? `dew-status ${item.statusTone}` : "dew-status";
+        status.textContent = item.status;
+        card.appendChild(status);
+      }
     }
     elements.detailsGrid.appendChild(card);
   });
-  renderAllergenAlerts(currentPollenDetails, currentHealthDetails);
+  if (!options.preserveAllergenAlerts) renderAllergenAlerts(currentPollenDetails, currentHealthDetails);
+}
+
+function detailsByLabel(details = []) {
+  return new Map((Array.isArray(details) ? details : []).map((item) => [item.label, item]));
+}
+
+function hourlyDetailCards(hour, baseDetails = []) {
+  if (!hour) return Array.isArray(baseDetails) ? baseDetails : [];
+  const base = detailsByLabel(baseDetails);
+  const baseWind = base.get("Wind");
+  const baseGust = base.get("Wind Gust");
+  const baseHumidity = base.get("Humidity");
+  const baseDewPoint = base.get("Dew Point");
+  const fallbackItem = (label) => base.get(label);
+  const cards = [
+    { icon: "wind.svg", label: "Wind", value: [hour.windDirection, hour.wind || baseWind?.value || "0 mph"].filter(Boolean).join(" ").trim() },
+    { icon: "wind.svg", label: "Wind Gust", value: hour.windGust || baseGust?.value || "0 mph" },
+    { icon: "humidity.svg", label: "Humidity", value: hour.humidity || baseHumidity?.value || "0%" },
+    {
+      icon: "humidity.svg",
+      label: "Dew Point",
+      value: hour.dewPointLabel || baseDewPoint?.value || "--"
+    },
+    { ...(fallbackItem("Air Quality") || { icon: "aqi.svg", label: "Air Quality", value: "Checking" }) },
+    { icon: "uv.svg", label: "UV Index", value: hour.uvIndex || fallbackItem("UV Index")?.value || "0 Low" },
+    { ...(fallbackItem("Visibility") || { icon: "visibility.svg", label: "Visibility", value: "10 mi" }) },
+    { ...(fallbackItem("Pressure") || { icon: "pressure.svg", label: "Pressure", value: "0 in" }) },
+    { ...(fallbackItem("Daylight") || { icon: "sunrise.svg", label: "Daylight", value: "--", type: "sun", sunrise: "--", sunset: "--" }) },
+    { ...(fallbackItem("Pollen & Allergens") || { icon: "pollen.svg", label: "Pollen & Allergens", value: "View Details", type: "pollen", wide: true, details: [], health: [] }) }
+  ];
+  return cards;
 }
 
 function renderAllergenAlerts(pollenDetails = [], healthDetails = []) {
@@ -2166,6 +2240,7 @@ function renderHourly(hours) {
   elements.hourlyForecast.replaceChildren();
   lastHourlyHours = Array.isArray(hours) ? hours : [];
   const chartHours = getCurrentHourForecast(lastHourlyHours).slice(0, 8);
+  activeHourlyIndex = Math.max(0, Math.min(activeHourlyIndex, Math.max(0, chartHours.length - 1)));
   if (!chartHours.length) {
     const empty = document.createElement("p");
     empty.className = "hourly-empty";
@@ -2204,7 +2279,11 @@ function renderHourly(hours) {
     const windSpeed = parseWindMph(hour.wind);
     const tempOffset = tempValue === null ? 44 : 18 + (1 - ((tempValue - lowTemp) / tempRange)) * 38;
 
-    column.className = "hourly-column";
+    column.className = `hourly-column${index === activeHourlyIndex ? " is-active" : ""}`;
+    column.setAttribute("role", "button");
+    column.setAttribute("tabindex", "0");
+    column.setAttribute("aria-pressed", index === activeHourlyIndex ? "true" : "false");
+    column.setAttribute("aria-label", `${hour.time}, ${formatTemp(tempValue)}, precipitation ${precipChance}%, wind ${windSpeed} mph${hour.windDirection ? ` ${hour.windDirection}` : ""}`);
     graph.className = "hourly-column-graph";
     tempBar.className = "hourly-temp-bar";
     icon.className = "hourly-weather-icon";
@@ -2229,6 +2308,17 @@ function renderHourly(hours) {
         y: precipChartY(precipChance)
       });
     }
+
+    column.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setActiveHourly(index);
+    });
+    column.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveHourly(index);
+    });
 
     graph.append(tempBar);
     column.append(time, icon, tempLabel, graph, precip, wind, windDirection);
@@ -2263,6 +2353,20 @@ function renderHourly(hours) {
   precipLayer.prepend(precipSvg);
   chart.appendChild(precipLayer);
   elements.hourlyForecast.appendChild(chart);
+}
+
+function setActiveHourly(index) {
+  const chartHours = getCurrentHourForecast(lastHourlyHours).slice(0, 8);
+  if (!chartHours.length) return;
+  activeHourlyIndex = Math.max(0, Math.min(index, chartHours.length - 1));
+  elements.hourlyForecast.querySelectorAll(".hourly-column").forEach((column, columnIndex) => {
+    const isActive = columnIndex === activeHourlyIndex;
+    column.classList.toggle("is-active", isActive);
+    column.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  if (activeDashboardData?.details) {
+    renderDetails(hourlyDetailCards(chartHours[activeHourlyIndex], activeDashboardData.details), { preserveAllergenAlerts: true });
+  }
 }
 
 function renderDaily(days) {
@@ -2665,9 +2769,11 @@ async function renderDashboard() {
   updateRadarLocation(location);
   const data = await weatherService.getWeather(location);
   if (requestId !== dashboardRequestId) return;
+  activeDashboardData = data;
+  activeHourlyIndex = 0;
   renderCurrentWeather(data);
   renderSummaryStats(data.summaryStats);
-  renderDetails(data.details);
+  renderDetails(hourlyDetailCards(getCurrentHourForecast(Array.isArray(data.hourly) ? data.hourly : []).slice(0, 8)[0], data.details));
   renderPrecipitation(data.precipitation);
   renderAlert(data.alert);
   renderHourly(data.hourly);
