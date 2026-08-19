@@ -38,7 +38,6 @@
             </div>
             <div class="current-stats-panel">
               <div class="current-stats" id="currentStats" aria-label="Current condition summary"></div>
-              <div class="current-comfort" id="currentComfort" aria-label="Dew point comfort"></div>
             </div>
           </div>
           <div class="allergen-alerts" id="allergenAlerts" aria-label="High pollen and allergen alerts" hidden></div>
@@ -56,6 +55,10 @@
                 <span id="hourlyRangeLabel">Next 8 hours</span>
               </div>
               <div class="hourly-strip" id="hourlyForecast" tabindex="0"></div>
+              <div class="hourly-metric-toggle" aria-label="Hourly chart metric">
+                <button id="hourlyPrecipToggle" class="is-active" type="button" aria-pressed="true">Precipitation</button>
+                <button id="hourlyWindToggle" type="button" aria-pressed="false">Wind</button>
+              </div>
             </section>
             <section class="quick-grid" id="detailsGrid" aria-label="Weather details"></section>
           </section>
