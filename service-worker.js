@@ -1,4 +1,4 @@
-﻿const CACHE_NAME = "skystation-v1-143";
+﻿const CACHE_NAME = "skystation-v1-144";
 const APP_SHELL = [
   "./",
   "./index.html",
