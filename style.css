@@ -289,16 +289,12 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .sun-times strong { display: block; margin-top: 1px; color: var(--text); font-size: .66rem; line-height: 1; white-space: nowrap; }
 .quick-label { display: block; color: var(--muted); font-size: .64rem; font-weight: 700; line-height: 1.1; }
 .quick-value { display: block; margin-top: 3px; max-width: 100%; font-size: .86rem; font-weight: 820; line-height: 1.1; overflow-wrap: anywhere; }
-.quick-item.has-status { display: grid; grid-template-columns: 17px minmax(0, 1fr); column-gap: 8px; align-items: center; }
+.quick-item.has-status { display: grid; grid-template-columns: 17px minmax(0, 1fr); grid-template-areas: "icon label" "icon value"; column-gap: 8px; align-items: center; }
 .quick-item.has-status img { grid-column: 1; }
-.quick-item.has-status .quick-label { grid-column: 2; }
-.quick-item.has-status .quick-value { grid-column: 2; display: inline; margin-top: 0; }
+.quick-item.has-status .quick-label { grid-area: label; }
+.quick-item.has-status .quick-value { grid-area: value; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; width: auto; margin-top: 0; white-space: nowrap; overflow-wrap: normal; }
 .quick-item .dew-status { display: inline-flex; justify-self: start; width: max-content; margin-top: 6px; }
-.quick-item.has-status .dew-status { grid-column: 2; justify-self: start; margin-top: 4px; }
-@supports (display: contents) {
-  .quick-item.has-status .quick-value { display: contents; }
-  .quick-item.has-status .dew-status { grid-column: 2; justify-self: start; margin-left: 6px; margin-top: 0; }
-}
+.quick-item.has-status .dew-status { margin-top: 0; }
 .hourly-strip { max-width: 100%; min-width: 0; overflow: hidden; padding: 2px 0 4px; }
 .hourly-empty { margin: 0; color: var(--muted); font-size: .82rem; }
 .hourly-chart { min-width: 0; animation: forecastIn 420ms ease both; }

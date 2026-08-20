@@ -1960,13 +1960,13 @@ function renderDetails(details, options = {}) {
     } else {
       value.textContent = item.value;
       if (item.status) card.classList.add("has-status");
-      card.append(icon, label, value);
       if (item.status) {
         const status = document.createElement("span");
         status.className = item.statusTone ? `dew-status ${item.statusTone}` : "dew-status";
         status.textContent = item.status;
-        card.appendChild(status);
+        value.appendChild(status);
       }
+      card.append(icon, label, value);
     }
     elements.detailsGrid.appendChild(card);
   });
