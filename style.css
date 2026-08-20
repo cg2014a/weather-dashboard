@@ -101,6 +101,7 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .details-toggle[aria-expanded="true"] span { transform: rotate(225deg) translateY(-2px); }
 .current-stats-panel { display: grid; align-content: start; min-width: 0; }
 .current-stats { display: grid; align-content: start; overflow: hidden; border: 1px solid #cfd7e2; border-radius: 16px; background: #f7f9fd; box-shadow: inset 0 1px 0 rgba(255,255,255,.75); }
+.current-comfort { display: none !important; }
 .stat-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 50px; padding: 10px 12px; border-bottom: 1px solid #d5dde8; background: rgba(255,255,255,.18); font-size: 1.03rem; }
 .stat-row:last-child { border-bottom: 0; }
 .stat-row span { color: #111; }
