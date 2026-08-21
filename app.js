@@ -618,7 +618,7 @@ class WeatherService {
       const stationIds = (stations.features || [])
         .map((feature) => feature?.properties?.stationIdentifier)
         .filter(Boolean)
-        .slice(0, 8);
+        .slice(0, 2);
       if (!stationIds.length) return null;
       const observations = await Promise.allSettled(
         stationIds.map((station) => this.fetchJson(`https://api.weather.gov/stations/${station}/observations/latest`))
