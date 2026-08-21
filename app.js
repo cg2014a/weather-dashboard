@@ -615,9 +615,30 @@ class WeatherService {
   async getLatestObservation(stationsUrl) {
     try {
       const stations = await this.fetchJson(stationsUrl);
-      const station = stations.features?.[0]?.properties?.stationIdentifier;
-      if (!station) return null;
-      return this.fetchJson(`https://api.weather.gov/stations/${station}/observations/latest`);
+      const stationIds = (stations.features || [])
+        .map((feature) => feature?.properties?.stationIdentifier)
+        .filter(Boolean)
+        .slice(0, 8);
+      if (!stationIds.length) return null;
+      const observations = await Promise.allSettled(
+        stationIds.map((station) => this.fetchJson(`https://api.weather.gov/stations/${station}/observations/latest`))
+      );
+      const validObservations = observations
+        .map((result, index) => result.status === "fulfilled" && result.value ? { station: stationIds[index], observation: result.value } : null)
+        .filter(Boolean);
+      const primaryObservation = validObservations[0]?.observation || null;
+      if (!primaryObservation) return null;
+      const nearbyPrecip = validObservations.find(({ observation }) => (
+        this.isFreshObservation(observation) && this.isPrecipText(this.observedConditionText(observation))
+      ));
+      if (nearbyPrecip && nearbyPrecip.observation !== primaryObservation) {
+        primaryObservation.properties = {
+          ...primaryObservation.properties,
+          nearbyPrecipitationText: this.observedConditionText(nearbyPrecip.observation),
+          nearbyPrecipitationStation: nearbyPrecip.station
+        };
+      }
+      return primaryObservation;
     } catch {
       return null;
     }
@@ -960,7 +981,16 @@ class WeatherService {
     const type = this.precipType(precipText);
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
     const activelyOccurring = this.isPrecipActivelyOccurring(currentPeriod, supplemental, observation);
-    const active = this.isSupportedPrecipType(type) && (activelyOccurring || nextHourPeak >= PRECIP_DISPLAY_THRESHOLD);
+    const active = this.isSupportedPrecipType(type) && (activelyOccurring || chance >= PRECIP_DISPLAY_THRESHOLD || nextHourPeak >= PRECIP_DISPLAY_THRESHOLD);
+    const timeline = this.nextHourPrecipTimeline(hourlyPeriods, supplemental);
+    if (active && activelyOccurring && !timeline.some((item) => this.numberOrNull(item?.amount) >= 0.001 || this.numberOrNull(item?.chance) >= PRECIP_DISPLAY_THRESHOLD)) {
+      const activeChance = Math.max(chance, nextHourPeak, PRECIP_DISPLAY_THRESHOLD);
+      const activeAmount = type === "Snow" || type === "Sleet" ? null : 0.004;
+      timeline.splice(0, timeline.length, ...Array.from({ length: 21 }, (_, index) => ({
+        chance: Math.max(PRECIP_DISPLAY_THRESHOLD, activeChance - Math.max(0, index - 6)),
+        amount: activeAmount
+      })));
+    }
     const summary = activelyOccurring && nextHourPeak < PRECIP_DISPLAY_THRESHOLD
       ? `${type} is currently occurring.`
       : expectedAmount >= 0.001
@@ -976,7 +1006,7 @@ class WeatherService {
       nextHour: `${this.precipValue(hourlyPeriods[1], supplemental)}% next hour`,
       amount: this.precipAmountLabel(expectedAmount, hourlyPeriods, supplemental),
       today: expectedAmount >= 0.001 ? `${this.formatInches(expectedAmount)} today` : "",
-      timeline: this.nextHourPrecipTimeline(hourlyPeriods, supplemental),
+      timeline,
       note: this.precipNote(hourlyPeriods)
     };
   }
@@ -1340,7 +1370,7 @@ class WeatherService {
     const currentAmount = this.firstNumber(supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
     if (currentAmount >= 0.001) return true;
     const observedText = this.observedConditionText(observation);
-    if (this.isFreshObservation(observation) && /rain|showers|drizzle|snow|sleet|ice pellets/i.test(observedText)) return true;
+    if (this.isFreshObservation(observation) && this.isPrecipText(observedText)) return true;
     const currentText = period?.shortForecast || "";
     if (/chance|possible|likely/i.test(currentText)) return false;
     return /rain|showers|drizzle|snow|sleet|ice pellets/i.test(currentText);
@@ -1355,14 +1385,31 @@ class WeatherService {
     return [
       properties.textDescription,
       properties.rawMessage,
-      presentWeather
+      presentWeather,
+      properties.nearbyPrecipitationText
     ].filter(Boolean).join(" ");
+  }
+
+  isPrecipText(text = "") {
+    return /rain|showers|drizzle|snow|sleet|ice pellets|thunderstorm|thunderstorms|storm/i.test(String(text));
   }
 
   precipValue(period, supplemental) {
     const nwsValue = period?.probabilityOfPrecipitation?.value;
     const fallbackValue = supplemental?.precipChance;
-    return Math.round(this.firstNumber(nwsValue, fallbackValue) || 0);
+    const numericValue = this.firstNumber(nwsValue, fallbackValue);
+    if (numericValue !== null && numericValue > 0) return Math.round(numericValue);
+    return this.precipChanceFromText(`${period?.shortForecast || ""} ${period?.detailedForecast || ""}`);
+  }
+
+  precipChanceFromText(text = "") {
+    const value = String(text).toLowerCase();
+    if (!/rain|showers|drizzle|snow|sleet|ice pellets|thunderstorm|storm/.test(value)) return 0;
+    if (/likely|numerous|widespread/.test(value)) return 60;
+    if (/slight chance|isolated|few/.test(value)) return PRECIP_DISPLAY_THRESHOLD;
+    if (/chance|scattered/.test(value)) return 30;
+    if (/rain|showers|drizzle|snow|sleet|ice pellets|thunderstorm|storm/.test(value) && !/possible/.test(value)) return PRECIP_DISPLAY_THRESHOLD;
+    return 0;
   }
 
   precipChance(period, supplemental) {
