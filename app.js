@@ -130,7 +130,7 @@ class WeatherService {
       health: this.mapHealthRisks(enrichedSupplemental, airQuality)
     };
     const current = this.mapCurrent(currentPeriod, dailyPeriods, hourlyPeriods, observation, enrichedSupplemental);
-    const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental);
+    const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental, observation);
     const dailyOutlookPromise = spcOutlooksPromise
       .then((spcOutlooks) => this.mapDaily(dailyPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
       .catch((error) => {
@@ -176,7 +176,7 @@ class WeatherService {
       }
     };
     const current = this.mapCurrent(currentPeriod, forecastPeriods, hourlyPeriods, null, enrichedSupplemental);
-    const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental);
+    const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental, null);
     const dailyOutlookPromise = spcOutlooksPromise
       .then((spcOutlooks) => this.mapDaily(forecastPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
       .catch((error) => {
@@ -950,15 +950,16 @@ class WeatherService {
     return matchingPeriod?.detailedForecast || period?.detailedForecast || period?.shortForecast || "Current conditions are updating.";
   }
 
-  mapPrecipitation(currentPeriod, hourlyPeriods, supplemental) {
+  mapPrecipitation(currentPeriod, hourlyPeriods, supplemental, observation = null) {
     const chance = this.precipValue(currentPeriod, supplemental);
     const nextHourPeriods = hourlyPeriods.slice(0, 2);
     const nextHourPeak = Math.max(...nextHourPeriods.map((period) => this.precipValue(period, supplemental)), 0);
     const wetHours = nextHourPeriods.filter((period) => this.precipValue(period, supplemental) >= PRECIP_DISPLAY_THRESHOLD);
-    const precipText = [currentPeriod, ...wetHours].map((period) => period?.shortForecast || "").join(" ");
+    const observationText = this.observedConditionText(observation);
+    const precipText = [observationText, currentPeriod, ...wetHours].map((period) => typeof period === "string" ? period : period?.shortForecast || "").join(" ");
     const type = this.precipType(precipText);
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
-    const activelyOccurring = this.isPrecipActivelyOccurring(currentPeriod, supplemental);
+    const activelyOccurring = this.isPrecipActivelyOccurring(currentPeriod, supplemental, observation);
     const active = this.isSupportedPrecipType(type) && (activelyOccurring || nextHourPeak >= PRECIP_DISPLAY_THRESHOLD);
     const summary = activelyOccurring && nextHourPeak < PRECIP_DISPLAY_THRESHOLD
       ? `${type} is currently occurring.`
@@ -971,7 +972,7 @@ class WeatherService {
       type,
       icon: type === "Snow" || type === "Sleet" ? "weather-snow.svg" : "weather-rain.svg",
       summary: active ? summary : "No significant precipitation expected.",
-      current: active ? `${chance}% now` : "0% now",
+      current: active && activelyOccurring && chance < PRECIP_DISPLAY_THRESHOLD ? `${type} now` : active ? `${chance}% now` : "0% now",
       nextHour: `${this.precipValue(hourlyPeriods[1], supplemental)}% next hour`,
       amount: this.precipAmountLabel(expectedAmount, hourlyPeriods, supplemental),
       today: expectedAmount >= 0.001 ? `${this.formatInches(expectedAmount)} today` : "",
@@ -1335,12 +1336,27 @@ class WeatherService {
     return ["Rain", "Snow", "Sleet"].includes(type);
   }
 
-  isPrecipActivelyOccurring(period, supplemental) {
+  isPrecipActivelyOccurring(period, supplemental, observation = null) {
     const currentAmount = this.firstNumber(supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
     if (currentAmount >= 0.001) return true;
+    const observedText = this.observedConditionText(observation);
+    if (this.isFreshObservation(observation) && /rain|showers|drizzle|snow|sleet|ice pellets/i.test(observedText)) return true;
     const currentText = period?.shortForecast || "";
     if (/chance|possible|likely/i.test(currentText)) return false;
     return /rain|showers|drizzle|snow|sleet|ice pellets/i.test(currentText);
+  }
+
+  observedConditionText(observation) {
+    const properties = observation?.properties;
+    if (!properties) return "";
+    const presentWeather = Array.isArray(properties.presentWeather)
+      ? properties.presentWeather.map((item) => [item?.weather, item?.rawString].filter(Boolean).join(" ")).join(" ")
+      : "";
+    return [
+      properties.textDescription,
+      properties.rawMessage,
+      presentWeather
+    ].filter(Boolean).join(" ");
   }
 
   precipValue(period, supplemental) {
