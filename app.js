@@ -1,10 +1,12 @@
-﻿const ICON_PATH = "icons/";
+const ICON_PATH = "icons/";
 const DEFAULT_LOCATION = { label: "Olathe, KS", query: "Olathe, KS", city: "Olathe", state: "KS", lat: 38.9, lon: -94.84 };
 const LOCATION_STORAGE_KEY = "skystation-location";
 const AUTO_LOCATION_STORAGE_KEY = "skystation-auto-location";
 const DAILY_LAYOUT_STORAGE_KEY = "skystation-daily-layout";
 const AIRNOW_KEY_STORAGE_KEY = "skystation-airnow-key";
+const PRESSURE_HISTORY_STORAGE_KEY = "skystation-pressure-history";
 const PRECIP_DISPLAY_THRESHOLD = 20;
+const MAX_NEARBY_PRECIP_STATION_MILES = 10;
 const nwsPointUrl = ({ lat, lon }) => `https://api.weather.gov/points/${lat},${lon}`;
 const nwsAlertsUrl = ({ lat, lon }) => `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
 const spcOutlookUrl = (layerId, { lat, lon }) => {
@@ -21,8 +23,8 @@ const spcOutlookUrl = (layerId, { lat, lon }) => {
   });
   return `https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/FeatureServer/${layerId}/query?${params}`;
 };
-const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,olive_pollen,ragweed_pollen,dust&hourly=us_aqi&timezone=auto&forecast_days=7`;
-const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,rain,showers,snowfall,visibility,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=168`;
+const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi&hourly=us_aqi&timezone=auto&forecast_days=7`;
+const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,rain,showers,snowfall,visibility,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&minutely_15=precipitation_probability,precipitation,rain,showers,snowfall&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=168`;
 const epaUvUrl = (location) => location.zip
   ? `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/ZIP/${location.zip}/JSON`
   : `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/CITY/${encodeURIComponent(location.city || "")}/STATE/${location.state || ""}/JSON`;
@@ -45,8 +47,6 @@ const airNowCurrentSitesUrl = ({ lat, lon }) => {
   });
   return `https://services1.arcgis.com/YiULsZbgRKmBtdZN/ArcGIS/rest/services/Particulate_Matter_Map_WFL1/FeatureServer/0/query?${params}`;
 };
-const sunUrl = ({ lat, lon }) => `https://api.sunrise-sunset.org/v2?lat=${lat}&lng=${lon}`;
-
 const emptyWeather = {
   location: { city: DEFAULT_LOCATION.label },
   current: {
@@ -100,13 +100,13 @@ class WeatherService {
     if (!properties?.forecast && !properties?.forecastHourly) throw new Error("NWS forecast links unavailable.");
 
     const spcOutlooksPromise = this.getSpcOutlooks(location);
-    const [forecast, hourly, alerts, observation, airQuality, supplemental] = (await Promise.allSettled([
-      properties.forecast ? this.fetchJson(properties.forecast) : Promise.resolve(null),
-      properties.forecastHourly ? this.fetchJson(properties.forecastHourly) : Promise.resolve(null),
-      this.fetchJson(nwsAlertsUrl(location)),
-      properties.observationStations ? this.getLatestObservation(properties.observationStations) : Promise.resolve(null),
-      this.getAirQuality(location),
-      this.getSupplementalWeather(location)
+    const [forecast, hourly, gridData, alerts, observation, supplemental] = (await Promise.allSettled([
+      properties.forecast ? this.withTimeout(this.fetchJson(properties.forecast), 13000, "NWS forecast") : Promise.resolve(null),
+      properties.forecastHourly ? this.withTimeout(this.fetchJson(properties.forecastHourly), 13000, "NWS hourly forecast") : Promise.resolve(null),
+      properties.forecastGridData ? this.withTimeout(this.fetchJson(properties.forecastGridData), 9000, "NWS grid forecast") : Promise.resolve(null),
+      this.withTimeout(this.fetchJson(nwsAlertsUrl(location)), 9000, "NWS alerts"),
+      properties.observationStations ? this.withTimeout(this.getLatestObservation(properties.observationStations, location), 9000, "NWS observations") : Promise.resolve(null),
+      this.withTimeout(this.getSupplementalWeather(location), 9000, "supplemental weather")
     ])).map((result) => this.settledValue(result));
 
     const hourlyPeriods = hourly?.properties?.periods || [];
@@ -116,21 +116,26 @@ class WeatherService {
     }
     const dailyPeriods = forecastPeriods.length ? forecastPeriods : this.dailyPeriodsFromSupplemental(supplemental);
     const currentPeriod = hourlyPeriods[0] || forecastPeriods[0] || dailyPeriods[0] || this.periodFromSupplemental(supplemental);
-    const basePollen = airQuality?.pollen || supplemental?.pollen || this.emptyPollen();
+    const pressureTrend = this.pressureTrendFromHistory(location, observation, supplemental);
+    const gridSupplemental = this.mapGridData(gridData);
+    const basePollen = this.getPollenData(location, { ...supplemental, ...gridSupplemental }, { currentPeriod, dailyPeriods, observation });
     const enrichedSupplemental = {
       ...supplemental,
-      airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "Checking",
-      dailyAirQuality: airQuality?.dailyAirQuality || [],
+      ...gridSupplemental,
+      pressureTrend,
+      airQualityLabel: "Checking",
+      dailyAirQuality: [],
       alertHazards: this.mapAlertHazards(alerts || { features: [] }),
       spcOutlooks: [],
       pollen: basePollen
     };
     enrichedSupplemental.pollen = {
       ...basePollen,
-      health: this.mapHealthRisks(enrichedSupplemental, airQuality)
+      health: this.mapHealthRisks(enrichedSupplemental, null)
     };
     const current = this.mapCurrent(currentPeriod, dailyPeriods, hourlyPeriods, observation, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental, observation);
+    const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, enrichedSupplemental);
     const dailyOutlookPromise = spcOutlooksPromise
       .then((spcOutlooks) => this.mapDaily(dailyPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
       .catch((error) => {
@@ -141,42 +146,45 @@ class WeatherService {
     return {
       location: { city: location.label },
       current,
-      summaryStats: this.mapSummaryStats(current, currentPeriod, observation, precipitation, airQuality, enrichedSupplemental),
+      summaryStats: this.mapSummaryStats(current, currentPeriod, observation, precipitation, null, enrichedSupplemental),
       narrative: this.mapNarrative(currentPeriod, dailyPeriods),
       precipitation,
       details: this.mapDetails(currentPeriod, observation, precipitation, enrichedSupplemental),
       alert: this.mapAlert(alerts || { features: [] }),
       hourly: this.mapHourly(hourlyPeriods, enrichedSupplemental),
       daily: this.mapDaily(dailyPeriods, enrichedSupplemental),
-      dailyOutlookPromise
+      dailyOutlookPromise,
+      supplementalUpdatePromise
     };
   }
 
   async getFallbackWeather(location) {
     const spcOutlooksPromise = this.getSpcOutlooks(location);
-    const [airQuality, supplemental] = (await Promise.allSettled([
-      this.getAirQuality(location),
-      this.getSupplementalWeather(location)
+    const [supplemental] = (await Promise.allSettled([
+      this.withTimeout(this.getSupplementalWeather(location), 9000, "supplemental weather")
     ])).map((result) => this.settledValue(result));
     if (!supplemental) throw new Error("Supplemental weather unavailable.");
 
     const currentPeriod = this.periodFromSupplemental(supplemental);
     const hourlyPeriods = [currentPeriod, this.periodFromSupplemental(supplemental, 1)];
     const forecastPeriods = this.dailyPeriodsFromSupplemental(supplemental);
-    const basePollen = airQuality?.pollen || supplemental.pollen || this.emptyPollen();
+    const pressureTrend = this.pressureTrendFromHistory(location, null, supplemental);
+    const basePollen = this.getPollenData(location, supplemental, { currentPeriod, dailyPeriods: forecastPeriods });
     const enrichedSupplemental = {
       ...supplemental,
-      airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : "Checking",
-      dailyAirQuality: airQuality?.dailyAirQuality || [],
+      pressureTrend,
+      airQualityLabel: "Checking",
+      dailyAirQuality: [],
       alertHazards: [],
       spcOutlooks: [],
       pollen: {
         ...basePollen,
-        health: this.mapHealthRisks({ ...supplemental, pollen: basePollen }, airQuality)
+        health: this.mapHealthRisks({ ...supplemental, pollen: basePollen }, null)
       }
     };
     const current = this.mapCurrent(currentPeriod, forecastPeriods, hourlyPeriods, null, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental, null);
+    const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, forecastPeriods, null, precipitation, enrichedSupplemental);
     const dailyOutlookPromise = spcOutlooksPromise
       .then((spcOutlooks) => this.mapDaily(forecastPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
       .catch((error) => {
@@ -187,14 +195,15 @@ class WeatherService {
     return {
       location: { city: location.label },
       current,
-      summaryStats: this.mapSummaryStats(current, currentPeriod, null, precipitation, airQuality, enrichedSupplemental),
+      summaryStats: this.mapSummaryStats(current, currentPeriod, null, precipitation, null, enrichedSupplemental),
       narrative: "Weather conditions are shown from the backup forecast source.",
       precipitation,
       details: this.mapDetails(currentPeriod, null, precipitation, enrichedSupplemental),
       alert: null,
       hourly: this.mapHourly(hourlyPeriods, enrichedSupplemental),
       daily: this.mapDaily(forecastPeriods, enrichedSupplemental),
-      dailyOutlookPromise
+      dailyOutlookPromise,
+      supplementalUpdatePromise
     };
   }
 
@@ -202,6 +211,15 @@ class WeatherService {
     if (result.status === "fulfilled") return result.value;
     console.warn("Weather request skipped.", result.reason);
     return null;
+  }
+
+  withTimeout(promise, timeoutMs, label = "weather request") {
+    let timeoutId;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = window.setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+    });
+    return Promise.race([promise, timeout])
+      .finally(() => window.clearTimeout(timeoutId));
   }
 
   async resolveLocation(input) {
@@ -217,7 +235,6 @@ class WeatherService {
     if (airNow) {
       return {
         ...airNow,
-        pollen: openMeteo?.pollen,
         dailyAirQuality: openMeteo?.dailyAirQuality || []
       };
     }
@@ -272,21 +289,21 @@ class WeatherService {
       dayOffset: layer.dayOffset,
       level,
       source: label || `SPC ${dn}`,
-      rank: level === "alert" ? 2 : 1
+      rank: level === "alert" ? 3 : level === "impact" ? 2 : 1
     };
   }
 
   spcCategoricalLevel(dn, label) {
     const value = String(label || "").toLowerCase();
-    if (dn >= 5 || /enhanced|moderate|high/.test(value)) return "alert";
-    if (dn >= 3 || /marginal|slight/.test(value)) return "impact";
+    if (dn >= 4 || /enhanced|moderate|high/.test(value)) return "alert";
+    if (dn >= 3 || /slight/.test(value)) return "impact";
+    if (dn === 2 || /marginal/.test(value)) return "marginal";
     return "";
   }
 
   spcProbabilityLevel(dn, dayOffset) {
     if (dn >= 30) return "alert";
     if (dn >= 15) return "impact";
-    if (dayOffset <= 1 && dn >= 10) return "impact";
     return "";
   }
 
@@ -367,7 +384,6 @@ class WeatherService {
         value,
         category: this.airQualityCategory(value),
         tone: this.airQualityTone(value),
-        pollen: this.mapPollen(data.current),
         dailyAirQuality: this.dailyAirQualityFromHourly(data.hourly),
         source: "Open-Meteo"
       };
@@ -378,54 +394,361 @@ class WeatherService {
   }
 
   async getSupplementalWeather(location) {
-    const [sun, uvIndex, openMeteo, pollen] = await Promise.all([
-      this.getSunData(location),
-      this.getUvIndex(location),
-      this.getOpenMeteoWeather(location),
-      this.getPollen(location)
+    const [uvIndexResult, openMeteoResult] = await Promise.allSettled([
+      this.withTimeout(this.getUvIndex(location), 6000, "UV index"),
+      this.withTimeout(this.getOpenMeteoWeather(location), 9000, "Open-Meteo weather")
     ]);
+    const uvIndex = this.settledValue(uvIndexResult);
+    const openMeteo = this.settledValue(openMeteoResult);
 
     return {
       ...openMeteo,
-      pollen,
-      uvIndex: openMeteo?.uvIndex ?? uvIndex ?? null,
-      sunrise: sun?.sunrise || openMeteo?.sunrise || null,
-      sunset: sun?.sunset || openMeteo?.sunset || null
+      uvIndex: uvIndex ?? openMeteo?.uvIndex ?? null,
+      sunrise: openMeteo?.sunrise || null,
+      sunset: openMeteo?.sunset || null
     };
   }
 
-  async getPollen(location) {
-    try {
-      const data = await this.getOpenMeteoAirQualityPayload(location);
-      return this.mapPollen(data.current);
-    } catch (error) {
-      console.warn("Pollen data unavailable.", error);
-      return this.emptyPollen();
-    }
+  async getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, baseSupplemental) {
+    const airQualityResult = await Promise.allSettled([
+      this.withTimeout(this.getAirQuality(location), 5000, "air quality")
+    ]);
+    const airQuality = this.settledValue(airQualityResult[0]);
+    const pollen = baseSupplemental?.pollen || this.getPollenData(location, baseSupplemental, { currentPeriod, dailyPeriods, observation });
+    const updatedSupplemental = {
+      ...baseSupplemental,
+      airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : baseSupplemental.airQualityLabel,
+      dailyAirQuality: airQuality?.dailyAirQuality || baseSupplemental.dailyAirQuality || [],
+      pollen: {
+        ...pollen,
+        health: this.mapHealthRisks({ ...baseSupplemental, pollen }, airQuality)
+      }
+    };
+    return {
+      details: this.mapDetails(currentPeriod, observation, precipitation, updatedSupplemental),
+      daily: this.mapDaily(dailyPeriods, updatedSupplemental)
+    };
   }
 
   async getOpenMeteoAirQualityPayload(location) {
     const key = `${location.lat},${location.lon}`;
     if (!this.pendingAirQualityPayloads.has(key)) {
-      const request = this.fetchJson(airQualityUrl(location))
+      const request = this.fetchJson(airQualityUrl(location), { timeoutMs: 10000 })
         .finally(() => this.pendingAirQualityPayloads.delete(key));
       this.pendingAirQualityPayloads.set(key, request);
     }
     return this.pendingAirQualityPayloads.get(key);
   }
 
-  async getSunData(location) {
-    try {
-      const data = await this.fetchJson(sunUrl(location));
-      const result = data.results || data;
-      return {
-        sunrise: this.formatSunTime(result.sunrise),
-        sunset: this.formatSunTime(result.sunset)
-      };
-    } catch (error) {
-      console.warn("Sunrise and sunset unavailable.", error);
-      return null;
+  getPollenData(location, weather = {}, context = {}) {
+    return this.calculateAllergyRisk(location, weather, context);
+  }
+
+  calculateAllergyRisk(location, weather = {}, context = {}) {
+    const inputs = this.allergyWeatherInputs(location, weather, context);
+    const details = [
+      this.allergyRiskDetail("Tree Allergy Risk", this.seasonalPollenRisk("tree", inputs)),
+      this.allergyRiskDetail("Grass Allergy Risk", this.seasonalPollenRisk("grass", inputs)),
+      this.allergyRiskDetail("Weed Allergy Risk", this.seasonalPollenRisk("weed", inputs)),
+      this.allergyRiskDetail("Ragweed Allergy Risk", this.seasonalPollenRisk("ragweed", inputs)),
+      this.allergyRiskDetail("Outdoor Mold Risk", this.outdoorMoldRisk(inputs)),
+      this.allergyRiskDetail("Outdoor Dust Risk", this.outdoorDustRisk(inputs), "aqi.svg")
+    ];
+    const majorRisks = details.filter((item) => item.label !== "Outdoor Dust Risk");
+    const dominant = majorRisks.slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0] || details[0];
+    const peak = Math.max(...majorRisks.map((item) => item.score || 0), 0);
+    return {
+      value: peak,
+      category: this.allergyRiskLevel(peak),
+      overall: { score: peak, level: this.allergyRiskLevel(peak) },
+      dominantAllergen: dominant?.label || "",
+      source: "SkyStation Allergy Risk",
+      sourceName: "SkyStation Allergy Risk",
+      measured: false,
+      estimated: true,
+      updatedAt: new Date().toISOString(),
+      reason: this.allergyRiskReason(dominant, inputs),
+      note: "Estimated from season and local weather conditions. This is an estimated outdoor allergy outlook, not a measured pollen count.",
+      details
+    };
+  }
+
+  allergyWeatherInputs(location = {}, weather = {}, context = {}) {
+    const period = context?.currentPeriod || {};
+    const daily = Array.isArray(context?.dailyPeriods) ? context.dailyPeriods : [];
+    const text = `${period.shortForecast || ""} ${period.detailedForecast || ""}`;
+    const precipAmount = this.firstNumber(
+      weather?.precipitationAmount,
+      weather?.rain,
+      weather?.showers,
+      weather?.snowfall,
+      weather?.dailyGridPrecipAmounts?.[0],
+      weather?.dailyPrecipAmount
+    ) || 0;
+    const date = context?.date ? new Date(context.date) : new Date();
+    return {
+      date,
+      dayOfYear: this.dayOfYear(date),
+      latitude: this.numberOrNull(location?.lat) ?? DEFAULT_LOCATION.lat,
+      temperature: this.firstNumber(weather?.temperature, period.temperature, daily?.[0]?.temperature) ?? 60,
+      high: this.firstNumber(weather?.high, daily?.[0]?.temperature, period.temperature) ?? 60,
+      low: this.firstNumber(weather?.low, daily?.[1]?.temperature, weather?.temperature) ?? 50,
+      humidity: this.numberOrNull(weather?.humidity) ?? 50,
+      dewPoint: this.numberOrNull(weather?.dewPoint) ?? 50,
+      windSpeed: this.firstNumber(weather?.windSpeed, this.mphFromText(period.windSpeed)) || 0,
+      windGust: this.firstNumber(weather?.windGusts, this.mphFromText(text)) || 0,
+      precipChance: this.firstNumber(weather?.gridPrecipChance, weather?.precipChance) || 0,
+      precipAmount,
+      cloudCover: this.firstNumber(weather?.cloudCover, weather?.gridCloudCover) ?? 40,
+      conditionText: text
+    };
+  }
+
+  seasonalPollenRisk(type, inputs) {
+    const season = this.smoothSeasonScore(inputs.dayOfYear, this.allergySeasonWindow(type, inputs.latitude), 38);
+    const stage = this.seasonalActivityStage(season);
+    const activePrecip = this.isPrecipCondition(inputs.conditionText) || inputs.precipAmount >= 0.01;
+    const freezing = inputs.temperature <= 32 || inputs.low <= 28 || /snow|sleet|ice|freez/i.test(inputs.conditionText);
+    const temperature = this.pollenTemperatureComponent(inputs.temperature);
+    const moisture = this.pollenMoistureComponent(inputs.humidity, inputs.precipAmount, activePrecip);
+    const wind = this.pollenWindComponent(inputs.windSpeed, inputs.windGust);
+    const exceptional = this.pollenExceptionalComponent(stage, inputs, activePrecip);
+    let rainSuppression = 0;
+    if (inputs.precipAmount >= 0.25) rainSuppression = -28;
+    else if (inputs.precipAmount >= 0.1) rainSuppression = -22;
+    else if (inputs.precipAmount >= 0.03) rainSuppression = -14;
+    else if (inputs.precipAmount >= 0.005 || activePrecip) rainSuppression = -8;
+    let score = season + temperature + moisture + wind + exceptional + rainSuppression;
+    if (freezing) score = Math.min(score * 0.35, 18);
+    score = Math.min(score, this.pollenSeasonCap(stage, inputs.precipAmount, activePrecip));
+    score = Math.round(this.clamp(score, 0, 100));
+    return {
+      score,
+      components: {
+        season: Math.round(season),
+        temperature,
+        moisture,
+        wind,
+        exceptional,
+        rainSuppression,
+        cap: this.pollenSeasonCap(stage, inputs.precipAmount, activePrecip),
+        stage
+      }
+    };
+  }
+
+  outdoorMoldRisk(inputs) {
+    const day = inputs.dayOfYear;
+    const season = day >= 100 && day <= 325 ? (day >= 225 && day <= 315 ? 28 : 18) : 6;
+    const moisture = inputs.precipAmount >= 0.1
+      ? 18
+      : inputs.precipAmount >= 0.02 || this.isPrecipCondition(inputs.conditionText)
+        ? 12
+        : inputs.humidity >= 85 && inputs.dewPoint >= 68
+          ? 10
+          : inputs.humidity >= 75
+            ? 6
+            : 0;
+    const humidity = inputs.humidity >= 90 && inputs.dewPoint >= 70 ? 12 : inputs.humidity >= 80 && inputs.dewPoint >= 65 ? 8 : 0;
+    const temperature = inputs.temperature >= 60 && inputs.temperature <= 85 ? 8 : inputs.temperature >= 50 && inputs.temperature <= 90 ? 4 : 0;
+    const dampPattern = moisture >= 12 && inputs.cloudCover >= 70 ? 8 : 0;
+    const coldSuppression = inputs.temperature <= 32 || inputs.low <= 28 ? -24 : 0;
+    const score = Math.round(this.clamp(season + moisture + humidity + temperature + dampPattern + coldSuppression, 0, 100));
+    return {
+      score,
+      components: { season, moisture, humidity, temperature, dampPattern, coldSuppression }
+    };
+  }
+
+  outdoorDustRisk(inputs) {
+    const base = 10;
+    const dryness = inputs.humidity < 25 ? 18 : inputs.humidity < 35 ? 12 : inputs.humidity < 45 ? 6 : 0;
+    const wind = inputs.windSpeed >= 20 ? 20 : inputs.windSpeed >= 12 ? 14 : inputs.windSpeed >= 7 ? 8 : 0;
+    const gust = inputs.windGust >= 30 ? 7 : inputs.windGust >= 22 ? 4 : 0;
+    const rainSuppression = inputs.precipAmount >= 0.1 ? -28 : inputs.precipAmount >= 0.03 || this.isPrecipCondition(inputs.conditionText) ? -18 : 0;
+    const score = Math.round(this.clamp(base + dryness + wind + gust + rainSuppression, 0, 100));
+    return {
+      score,
+      components: { base, dryness, wind, gust, rainSuppression }
+    };
+  }
+
+  allergyRiskDetail(label, risk, icon = "pollen.svg") {
+    const score = typeof risk === "object" ? risk.score : risk;
+    return {
+      label,
+      value: null,
+      score: Math.round(score),
+      category: this.allergyRiskLevel(score),
+      icon,
+      components: typeof risk === "object" ? risk.components : {},
+      description: "Estimated from season and local weather conditions."
+    };
+  }
+
+  seasonalActivityStage(seasonScore) {
+    if (seasonScore >= 34) return "peak";
+    if (seasonScore >= 24) return "active";
+    if (seasonScore >= 10) return "shoulder";
+    return "out";
+  }
+
+  pollenSeasonCap(stage, precipAmount, activePrecip) {
+    if (precipAmount >= 0.25) return 35;
+    if (precipAmount >= 0.1) return 42;
+    if (activePrecip || precipAmount >= 0.03) return stage === "peak" ? 52 : 45;
+    if (stage === "peak") return 82;
+    if (stage === "active") return 62;
+    if (stage === "shoulder") return 40;
+    return 18;
+  }
+
+  pollenTemperatureComponent(temp) {
+    if (temp >= 60 && temp <= 82) return 8;
+    if (temp > 82 && temp <= 95) return 5;
+    if (temp >= 50 && temp < 60) return 3;
+    if (temp < 45) return -6;
+    return 0;
+  }
+
+  pollenMoistureComponent(humidity, precipAmount, activePrecip) {
+    if (activePrecip || precipAmount >= 0.005) return 0;
+    if (humidity >= 35 && humidity <= 60) return 8;
+    if (humidity < 35) return 5;
+    if (humidity > 80) return -3;
+    return 3;
+  }
+
+  pollenWindComponent(speed, gust) {
+    if (speed >= 7 && speed <= 16) return gust >= 22 ? 12 : 10;
+    if (speed >= 3 && speed < 7) return 5;
+    if (speed > 16 && speed <= 25) return 7;
+    if (speed > 25) return 2;
+    return 0;
+  }
+
+  pollenExceptionalComponent(stage, inputs, activePrecip) {
+    if (stage !== "peak" || activePrecip || inputs.precipAmount >= 0.03) return 0;
+    const warmDryBreezy = inputs.temperature >= 65 && inputs.temperature <= 92
+      && inputs.humidity >= 30 && inputs.humidity <= 62
+      && inputs.windSpeed >= 7 && inputs.windSpeed <= 18;
+    if (!warmDryBreezy) return 0;
+    return inputs.windGust >= 22 ? 14 : 10;
+  }
+
+  allergyRiskLevel(score) {
+    const value = this.numberOrNull(score) || 0;
+    if (value >= 75) return "Very High";
+    if (value >= 50) return "High";
+    if (value >= 25) return "Moderate";
+    return "Low";
+  }
+
+  allergyRiskReason(dominant, inputs) {
+    if (!dominant || (dominant.score || 0) < 25) {
+      return "Outdoor allergy risk is estimated to be low from current season and local weather conditions.";
     }
+    if (/mold/i.test(dominant.label)) {
+      return "Outdoor mold risk is elevated by humid conditions, recent or expected precipitation, and seasonal warmth.";
+    }
+    if (/dust/i.test(dominant.label)) {
+      return "Outdoor dust risk is elevated by dry air and wind.";
+    }
+    if (inputs.precipAmount >= 0.03 || this.isPrecipCondition(inputs.conditionText)) {
+      return `${dominant.label} is the leading allergy risk, though rain may reduce airborne pollen at times.`;
+    }
+    if (inputs.windSpeed >= 8 || inputs.windGust >= 18) {
+      return `${dominant.label} is elevated, and breezy weather may help allergens spread.`;
+    }
+    return `${dominant.label} is elevated based on the local season and current weather pattern.`;
+  }
+
+  allergySeasonWindow(type, latitude) {
+    const band = this.latitudeBand(latitude);
+    const windows = {
+      south: {
+        tree: [25, 55, 105, 150],
+        grass: [75, 105, 170, 240],
+        weed: [155, 220, 285, 335],
+        ragweed: [190, 230, 290, 330]
+      },
+      midSouth: {
+        tree: [40, 70, 115, 155],
+        grass: [95, 130, 180, 235],
+        weed: [170, 225, 280, 320],
+        ragweed: [200, 235, 285, 315]
+      },
+      central: {
+        tree: [60, 95, 125, 165],
+        grass: [120, 140, 180, 220],
+        weed: [185, 230, 275, 305],
+        ragweed: [210, 240, 280, 305]
+      },
+      north: {
+        tree: [80, 110, 145, 175],
+        grass: [135, 165, 205, 245],
+        weed: [195, 235, 265, 295],
+        ragweed: [220, 245, 270, 295]
+      },
+      farNorth: {
+        tree: [95, 125, 155, 185],
+        grass: [150, 170, 210, 245],
+        weed: [205, 235, 260, 285],
+        ragweed: [230, 250, 265, 285]
+      }
+    };
+    return windows[band]?.[type] || windows.central[type];
+  }
+
+  latitudeBand(latitude) {
+    const lat = this.numberOrNull(latitude) ?? DEFAULT_LOCATION.lat;
+    if (lat < 32) return "south";
+    if (lat < 37) return "midSouth";
+    if (lat < 42) return "central";
+    if (lat < 47) return "north";
+    return "farNorth";
+  }
+
+  smoothSeasonScore(day, window, peak = 68) {
+    const [start, peakStart, peakEnd, end] = window;
+    if (!Number.isFinite(day) || day < start || day > end) return 0;
+    if (day >= peakStart && day <= peakEnd) return peak;
+    const smooth = (value) => value * value * (3 - 2 * value);
+    if (day < peakStart) return peak * smooth((day - start) / Math.max(1, peakStart - start));
+    return peak * (1 - smooth((day - peakEnd) / Math.max(1, end - peakEnd)));
+  }
+
+  dayOfYear(date = new Date()) {
+    const start = new Date(date.getFullYear(), 0, 0);
+    return Math.floor((date - start) / 86400000);
+  }
+
+  windAllergyModifier(windSpeed, windGust) {
+    const speed = this.numberOrNull(windSpeed) || 0;
+    const gust = this.numberOrNull(windGust) || 0;
+    let score = 0;
+    if (speed >= 3 && speed < 6) score += 3;
+    else if (speed >= 6 && speed <= 15) score += 10;
+    else if (speed > 15 && speed <= 25) score += 6;
+    else if (speed > 25) score += 2;
+    if (gust >= 25) score += 3;
+    else if (gust >= 18) score += 2;
+    return score;
+  }
+
+  isPrecipCondition(text = "") {
+    return /rain|showers|thunderstorm|snow|sleet|drizzle|freezing rain/i.test(String(text));
+  }
+
+  mphFromText(text = "") {
+    const values = [...String(text).matchAll(/(\d+(?:\.\d+)?)\s*mph/gi)]
+      .map((match) => this.numberOrNull(match[1]))
+      .filter((value) => value !== null);
+    return values.length ? Math.max(...values) : null;
+  }
+
+  clamp(value, min, max) {
+    return Math.min(max, Math.max(min, Number(value) || 0));
   }
 
   async getUvIndex(location) {
@@ -472,6 +795,11 @@ class WeatherService {
         precipChance: this.numberOrNull(hourly.precipitation_probability?.[0]),
         hourlyPrecipChances: (hourly.precipitation_probability || []).map((value) => this.numberOrNull(value)),
         hourlyPrecipAmounts: (hourly.precipitation || []).map((value) => this.numberOrNull(value)),
+        minutelyPrecipChances: (data.minutely_15?.precipitation_probability || []).map((value) => this.numberOrNull(value)),
+        minutelyPrecipAmounts: (data.minutely_15?.precipitation || []).map((value) => this.numberOrNull(value)),
+        minutelyRain: (data.minutely_15?.rain || []).map((value) => this.numberOrNull(value)),
+        minutelyShowers: (data.minutely_15?.showers || []).map((value) => this.numberOrNull(value)),
+        minutelySnowfall: (data.minutely_15?.snowfall || []).map((value) => this.numberOrNull(value)),
         hourlyHumidity: (hourly.relative_humidity_2m || []).map((value) => this.numberOrNull(value)),
         hourlyDewPoints: (hourly.dew_point_2m || []).map((value) => this.numberOrNull(value)),
         hourlyWindSpeeds: (hourly.wind_speed_10m || []).map((value) => this.numberOrNull(value)),
@@ -555,6 +883,48 @@ class WeatherService {
     return { dates, humidity, dewPoints, windSpeeds, windDirections, windGusts, uvIndexes, cloudCover, pressure, visibility };
   }
 
+  mapGridData(gridData) {
+    const properties = gridData?.properties || {};
+    if (!properties) return {};
+    const qpf = this.gridValuesByDay(properties.quantitativePrecipitation?.values, (value) => this.mmToInches(value));
+    const pop = this.gridValuesByDay(properties.probabilityOfPrecipitation?.values, (value) => this.numberOrNull(value), "max");
+    const skyCover = this.gridValuesByDay(properties.skyCover?.values, (value) => this.numberOrNull(value), "average");
+    const currentQpf = qpf[0] ?? null;
+    const currentPop = pop[0] ?? null;
+    const currentSky = skyCover[0] ?? null;
+    return {
+      gridPrecipAmount: currentQpf,
+      gridPrecipChance: currentPop,
+      gridCloudCover: currentSky,
+      dailyGridPrecipAmounts: qpf,
+      dailyGridPrecipChances: pop,
+      dailyGridCloudCover: skyCover
+    };
+  }
+
+  gridValuesByDay(values = [], mapper, mode = "sum") {
+    const byDay = new Map();
+    (Array.isArray(values) ? values : []).forEach((item) => {
+      const amount = mapper(item?.value);
+      if (amount === null || amount === undefined || !Number.isFinite(Number(amount))) return;
+      const date = String(item?.validTime || "").slice(0, 10);
+      if (!date) return;
+      if (!byDay.has(date)) byDay.set(date, []);
+      byDay.get(date).push(Number(amount));
+    });
+    return Array.from(byDay.values()).slice(0, 7).map((dayValues) => {
+      if (!dayValues.length) return null;
+      if (mode === "max") return Math.max(...dayValues);
+      if (mode === "average") return dayValues.reduce((total, value) => total + value, 0) / dayValues.length;
+      return dayValues.reduce((total, value) => total + value, 0);
+    });
+  }
+
+  mmToInches(value) {
+    const mm = this.numberOrNull(value);
+    return mm === null ? null : mm / 25.4;
+  }
+
   async resolveZip(zip) {
     const data = await this.fetchJson(`https://api.zippopotam.us/us/${zip}`);
     const place = data.places?.[0];
@@ -612,30 +982,50 @@ class WeatherService {
     return states[trimmed] || "";
   }
 
-  async getLatestObservation(stationsUrl) {
+  async getLatestObservation(stationsUrl, location) {
     try {
       const stations = await this.fetchJson(stationsUrl);
-      const stationIds = (stations.features || [])
-        .map((feature) => feature?.properties?.stationIdentifier)
+      const stationItems = (stations.features || [])
+        .map((feature) => {
+          const station = feature?.properties?.stationIdentifier;
+          const [lon, lat] = Array.isArray(feature?.geometry?.coordinates) ? feature.geometry.coordinates : [];
+          const distance = Number.isFinite(Number(lat)) && Number.isFinite(Number(lon))
+            ? this.distanceMiles(location.lat, location.lon, lat, lon)
+            : Number.POSITIVE_INFINITY;
+          return station ? { station, distance } : null;
+        })
         .filter(Boolean)
+        .filter((item) => !Number.isFinite(item.distance) || item.distance <= MAX_NEARBY_PRECIP_STATION_MILES)
+        .sort((a, b) => a.distance - b.distance)
         .slice(0, 2);
-      if (!stationIds.length) return null;
+      if (!stationItems.length) return null;
       const observations = await Promise.allSettled(
-        stationIds.map((station) => this.fetchJson(`https://api.weather.gov/stations/${station}/observations/latest`))
+        stationItems.map(({ station }) => this.fetchJson(`https://api.weather.gov/stations/${station}/observations/latest`))
       );
       const validObservations = observations
-        .map((result, index) => result.status === "fulfilled" && result.value ? { station: stationIds[index], observation: result.value } : null)
+        .map((result, index) => result.status === "fulfilled" && result.value ? { ...stationItems[index], observation: result.value } : null)
         .filter(Boolean);
       const primaryObservation = validObservations[0]?.observation || null;
       if (!primaryObservation) return null;
-      const nearbyPrecip = validObservations.find(({ observation }) => (
-        this.isFreshObservation(observation) && this.isPrecipText(this.observedConditionText(observation))
-      ));
-      if (nearbyPrecip && nearbyPrecip.observation !== primaryObservation) {
+      const localText = this.localObservedConditionText(primaryObservation);
+      if (this.isFreshObservation(primaryObservation) && this.isPrecipText(localText)) {
         primaryObservation.properties = {
           ...primaryObservation.properties,
-          nearbyPrecipitationText: this.observedConditionText(nearbyPrecip.observation),
-          nearbyPrecipitationStation: nearbyPrecip.station
+          localPrecipitationText: localText,
+          localPrecipitationStation: validObservations[0].station
+        };
+      }
+      const nearbyPrecip = validObservations.slice(1).find(({ observation, distance }) => (
+        distance <= MAX_NEARBY_PRECIP_STATION_MILES
+        && this.isFreshObservation(observation)
+        && this.isPrecipText(this.localObservedConditionText(observation))
+      ));
+      if (nearbyPrecip) {
+        primaryObservation.properties = {
+          ...primaryObservation.properties,
+          nearbyPrecipitationText: this.localObservedConditionText(nearbyPrecip.observation),
+          nearbyPrecipitationStation: nearbyPrecip.station,
+          nearbyPrecipitationDistance: nearbyPrecip.distance
         };
       }
       return primaryObservation;
@@ -644,10 +1034,26 @@ class WeatherService {
     }
   }
 
-  async fetchJson(url) {
-    const response = await fetch(url, { headers: { Accept: "application/json, application/geo+json" } });
+  async fetchJson(url, options = {}) {
+    const response = await this.fetchWithTimeout(url, {
+      headers: { Accept: "application/json, application/geo+json" },
+      timeoutMs: options.timeoutMs || 12000
+    });
     if (!response.ok) throw new Error(`Weather request failed: ${response.status}`);
     return response.json();
+  }
+
+  async fetchWithTimeout(url, options = {}) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || 12000);
+    try {
+      return await fetch(url, {
+        headers: options.headers,
+        signal: controller.signal
+      });
+    } finally {
+      window.clearTimeout(timeout);
+    }
   }
 
   periodFromSupplemental(supplemental, hourIndex = 0) {
@@ -700,17 +1106,22 @@ class WeatherService {
   }
 
   mapCurrent(period, forecastPeriods, hourlyPeriods, observation, supplemental) {
-    const temp = period?.temperature ?? supplemental?.temperature ?? null;
+    const observedTemp = this.isFreshObservation(observation)
+      ? this.readTemperature(observation?.properties?.temperature?.value)
+      : null;
+    const temp = this.firstNumber(observedTemp, supplemental?.temperature, period?.temperature);
     const todayHigh = forecastPeriods.find((item) => item.isDaytime)?.temperature ?? supplemental?.high ?? temp;
     const tonightLow = forecastPeriods.find((item) => !item.isDaytime)?.temperature ?? supplemental?.low ?? null;
     const observedHeatIndex = this.readTemperature(observation?.properties?.heatIndex?.value);
     const observedWindChill = this.readTemperature(observation?.properties?.windChill?.value);
     const feelsLike = observedHeatIndex ?? observedWindChill ?? supplemental?.feelsLike ?? temp;
+    const observedCondition = this.isFreshObservation(observation) ? this.visibleObservedConditionText(observation) : "";
+    const condition = observedCondition || period?.shortForecast || "Current conditions";
 
     return {
       temperature: temp,
-      icon: this.iconForForecast(period?.shortForecast, period?.isDaytime),
-      condition: period?.shortForecast || "Current conditions",
+      icon: this.iconForForecast(condition, period?.isDaytime),
+      condition,
       feelsLike,
       high: todayHigh,
       low: tonightLow
@@ -718,8 +1129,9 @@ class WeatherService {
   }
 
   mapSummaryStats(current, period, observation, precipitation, airQuality, supplemental) {
-    const windValue = `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim()
+    const windValue = this.readObservedWind(observation)
       || this.formatOpenMeteoWind(supplemental)
+      || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim()
       || "0 mph";
     const precipAmount = this.currentPrecipAmount(period, precipitation, supplemental);
 
@@ -736,53 +1148,35 @@ class WeatherService {
     ];
   }
 
-  mapPollen(current = {}) {
-    const hasPollenData = [
-      "alder_pollen",
-      "birch_pollen",
-      "olive_pollen",
-      "ragweed_pollen",
-      "grass_pollen",
-      "mugwort_pollen",
-      "dust"
-    ].some((field) => this.numberOrNull(current?.[field]) !== null);
-    if (!hasPollenData) return this.emptyPollen();
-
-    const treeValue = Math.max(
-      this.numberOrNull(current?.alder_pollen) || 0,
-      this.numberOrNull(current?.birch_pollen) || 0,
-      this.numberOrNull(current?.olive_pollen) || 0
-    );
-    const ragweedValue = this.numberOrNull(current?.ragweed_pollen) || 0;
-    const grassValue = this.numberOrNull(current?.grass_pollen) || 0;
-    const weedValue = this.numberOrNull(current?.mugwort_pollen) || 0;
-    const dustValue = this.numberOrNull(current?.dust) || 0;
-    const moldValue = this.moldRiskFromWeather(current);
-    const danderValue = Math.max(dustValue, treeValue * 0.35, grassValue * 0.35);
-    const peak = Math.max(treeValue, ragweedValue, grassValue, weedValue, moldValue, danderValue);
-    const details = [
-      this.allergenDetail("Tree Pollen", treeValue, "pollen"),
-      this.allergenDetail("Ragweed Pollen", ragweedValue, "pollen"),
-      this.allergenDetail("Grass Pollen", grassValue, "pollen"),
-      this.allergenDetail("Mold", moldValue, "pollen"),
-      this.allergenDetail("Dust & Dander", danderValue, "dust"),
-      this.allergenDetail("Weed Pollen", weedValue, "pollen")
-    ];
-    return { value: peak, category: this.pollenCategory(peak), details };
-  }
-
-  emptyPollen() {
-    const emptyDetail = (label, icon = "pollen.svg") => ({ label, value: null, category: "Checking", icon });
+  emptyPollen(category = "Checking") {
+    const emptyDetail = (label, icon = "pollen.svg") => ({ label, value: null, category, icon });
+    if (/unavailable/i.test(category)) {
+      return {
+        value: null,
+        category,
+        source: "SkyStation Allergy Risk",
+        estimated: true,
+        reason: "Pollen outlook is temporarily unavailable.",
+        note: "",
+        details: [
+          { label: "Pollen outlook temporarily unavailable", value: null, category: "", icon: "pollen.svg" }
+        ]
+      };
+    }
     return {
       value: null,
-      category: "Checking",
+      category,
+        source: "SkyStation Allergy Risk",
+      estimated: true,
+      reason: category === "Checking" ? "Allergy risk is being estimated." : "Allergy risk is unavailable right now.",
+      note: "Estimated from season and local weather conditions.",
       details: [
-        emptyDetail("Tree Pollen"),
-        emptyDetail("Ragweed Pollen"),
-        emptyDetail("Grass Pollen"),
-        emptyDetail("Mold"),
-        emptyDetail("Dust & Dander", "aqi.svg"),
-        emptyDetail("Weed Pollen")
+        emptyDetail("Tree Allergy Risk"),
+        emptyDetail("Grass Allergy Risk"),
+        emptyDetail("Weed Allergy Risk"),
+        emptyDetail("Ragweed Allergy Risk"),
+        emptyDetail("Outdoor Mold Risk"),
+        emptyDetail("Outdoor Dust Risk", "aqi.svg")
       ]
     };
   }
@@ -790,17 +1184,62 @@ class WeatherService {
   mapHealthRisks(supplemental, airQuality) {
     const humidity = this.numberOrNull(supplemental?.humidity) || 0;
     const pressure = this.numberOrNull(supplemental?.pressure) || 1013;
+    const dewPoint = this.numberOrNull(supplemental?.dewPoint) || 50;
     const uv = this.numberOrNull(supplemental?.uvIndex) || 0;
     const aqi = airQuality?.value || 0;
     const pollenPeak = supplemental?.pollen?.value || 0;
+    const precip = this.firstNumber(supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall) || 0;
+    const pressureTrend = supplemental?.pressureTrend || "Steady";
     return [
-      this.healthDetail("Arthritis", pressure < 1005 ? 52 : 12),
-      this.healthDetail("Sinus Pressure", humidity > 70 || pressure < 1005 ? 64 : 18),
-      this.healthDetail("Common Cold", humidity < 35 ? 42 : 12),
-      this.healthDetail("Flu", humidity < 35 ? 40 : 10),
-      this.healthDetail("Migraine", pressure < 1005 || uv >= 8 ? 58 : 16),
-      this.healthDetail("Asthma", Math.max(aqi, pollenPeak, humidity > 75 ? 52 : 0))
+      this.healthDetail("Arthritis", this.arthritisRiskScore(pressure, pressureTrend, precip)),
+      this.healthDetail("Sinus Pressure", this.sinusRiskScore(humidity, dewPoint, pressure, pressureTrend, precip)),
+      this.healthDetail("Common Cold", this.commonColdRiskScore(humidity, dewPoint)),
+      this.healthDetail("Flu", this.fluRiskScore(humidity, dewPoint)),
+      this.healthDetail("Migraine", this.migraineRiskScore(pressure, pressureTrend, uv)),
+      this.healthDetail("Asthma", this.asthmaRiskScore(aqi, pollenPeak, humidity, dewPoint, precip))
     ];
+  }
+
+  arthritisRiskScore(pressure, pressureTrend, precip) {
+    const pressureScore = pressure < 995 ? 22 : pressure < 1005 ? 12 : 0;
+    const trendScore = /falling/i.test(pressureTrend) ? 12 : 0;
+    const weatherScore = precip >= 0.05 ? 8 : precip > 0 ? 4 : 0;
+    return 12 + pressureScore + trendScore + weatherScore;
+  }
+
+  sinusRiskScore(humidity, dewPoint, pressure, pressureTrend, precip) {
+    const moistureScore = humidity >= 85 && dewPoint >= 70 ? 18 : humidity >= 75 && dewPoint >= 65 ? 12 : humidity <= 30 ? 8 : 0;
+    const pressureScore = pressure < 995 ? 16 : pressure < 1005 ? 8 : 0;
+    const transitionScore = (/falling|rising/i.test(pressureTrend) ? 8 : 0) + (precip >= 0.03 ? 6 : 0);
+    const combo = moistureScore >= 12 && pressureScore >= 8 ? 8 : 0;
+    return 12 + moistureScore + pressureScore + transitionScore + combo;
+  }
+
+  commonColdRiskScore(humidity, dewPoint) {
+    const dryAir = humidity < 30 || dewPoint < 30 ? 18 : humidity < 40 || dewPoint < 40 ? 10 : 0;
+    return 10 + dryAir;
+  }
+
+  fluRiskScore(humidity, dewPoint) {
+    const dryColdAir = humidity < 30 || dewPoint < 28 ? 18 : humidity < 40 || dewPoint < 36 ? 10 : 0;
+    return 8 + dryColdAir;
+  }
+
+  migraineRiskScore(pressure, pressureTrend, uv) {
+    const pressureScore = pressure < 995 ? 16 : pressure < 1005 ? 8 : 0;
+    const trendScore = /falling|rising/i.test(pressureTrend) ? 10 : 0;
+    const uvScore = uv >= 9 ? 12 : uv >= 7 ? 6 : 0;
+    const combo = pressureScore && trendScore ? 6 : 0;
+    return 12 + pressureScore + trendScore + uvScore + combo;
+  }
+
+  asthmaRiskScore(aqi, pollenPeak, humidity, dewPoint, precip) {
+    const aqiScore = aqi > 150 ? 34 : aqi > 100 ? 24 : aqi > 75 ? 14 : aqi > 50 ? 8 : 0;
+    const allergyScore = pollenPeak >= 75 ? 24 : pollenPeak >= 50 ? 16 : pollenPeak >= 25 ? 8 : 0;
+    const moistureScore = humidity >= 85 && dewPoint >= 70 ? 10 : humidity >= 75 && dewPoint >= 65 ? 6 : 0;
+    const weatherScore = precip >= 0.05 ? 4 : 0;
+    const combo = aqiScore >= 14 && allergyScore >= 16 ? 8 : 0;
+    return 10 + aqiScore + allergyScore + moistureScore + weatherScore + combo;
   }
 
   healthDetail(label, score) {
@@ -898,12 +1337,12 @@ class WeatherService {
   }
 
   mapDetails(period, observation, precipitation, supplemental) {
-    const wind = `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || this.formatOpenMeteoWind(supplemental) || "0 mph";
-    const windGust = this.readWindGust(period, supplemental);
+    const wind = this.readObservedWind(observation) || this.formatOpenMeteoWind(supplemental) || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || "0 mph";
+    const windGust = this.readWindGust(period, supplemental, observation);
     const humidity = this.readHumidity(observation, supplemental, period);
     const dewPoint = this.dewPointFahrenheit(observation, supplemental);
-    const cloudCover = this.readPercent(supplemental?.cloudCover);
-    const pressureTrend = this.pressureTrend(supplemental?.pressure, supplemental?.dailyPressure?.[0]);
+    const cloudCover = this.readPercent(this.firstNumber(supplemental?.cloudCover, supplemental?.gridCloudCover));
+    const pressureTrend = supplemental?.pressureTrend || "Steady";
     const pollen = supplemental?.pollen || this.emptyPollen();
     return [
       { icon: "wind.svg", label: "Wind", value: wind },
@@ -923,7 +1362,7 @@ class WeatherService {
       { icon: "pressure.svg", label: "Barometric Pressure", value: `${this.readPressureInHgWithFallback(observation?.properties?.barometricPressure?.value, supplemental?.pressure)} (${pressureTrend})` },
       { icon: "sunrise.svg", label: "Sunrise", value: supplemental?.sunrise || "--" },
       { icon: "sunrise.svg", label: "Sunset", value: supplemental?.sunset || "--" },
-      { icon: "pollen.svg", label: "Pollen & Allergens", value: "View Details", type: "pollen", details: pollen.details, health: pollen.health }
+      { icon: "pollen.svg", label: "Pollen & Allergens", value: "View Details", type: "pollen", details: pollen.details, health: pollen.health, note: pollen.note || pollen.reason || "" }
     ];
   }
 
@@ -980,7 +1419,9 @@ class WeatherService {
     const precipText = [observationText, currentPeriod, ...wetHours].map((period) => typeof period === "string" ? period : period?.shortForecast || "").join(" ");
     const type = this.precipType(precipText);
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
-    const activelyOccurring = this.isPrecipActivelyOccurring(currentPeriod, supplemental, observation);
+    const localObserved = this.isLocalPrecipActivelyOccurring(currentPeriod, supplemental, observation);
+    const nearbyObserved = this.isNearbyPrecipActivelyOccurring(observation);
+    const activelyOccurring = localObserved || nearbyObserved;
     const active = this.isSupportedPrecipType(type) && (activelyOccurring || chance >= PRECIP_DISPLAY_THRESHOLD || nextHourPeak >= PRECIP_DISPLAY_THRESHOLD);
     const timeline = this.nextHourPrecipTimeline(hourlyPeriods, supplemental);
     if (active && activelyOccurring && !timeline.some((item) => this.numberOrNull(item?.amount) >= 0.001 || this.numberOrNull(item?.chance) >= PRECIP_DISPLAY_THRESHOLD)) {
@@ -991,7 +1432,9 @@ class WeatherService {
         amount: activeAmount
       })));
     }
-    const summary = activelyOccurring && nextHourPeak < PRECIP_DISPLAY_THRESHOLD
+    const summary = nearbyObserved && !localObserved && nextHourPeak < PRECIP_DISPLAY_THRESHOLD
+      ? `${type} is showing nearby.`
+      : activelyOccurring && nextHourPeak < PRECIP_DISPLAY_THRESHOLD
       ? `${type} is currently occurring.`
       : expectedAmount >= 0.001
         ? `${type} totals may reach ${this.formatInches(expectedAmount)} based on the latest forecast.`
@@ -1002,7 +1445,7 @@ class WeatherService {
       type,
       icon: type === "Snow" || type === "Sleet" ? "weather-snow.svg" : "weather-rain.svg",
       summary: active ? summary : "No significant precipitation expected.",
-      current: active && activelyOccurring && chance < PRECIP_DISPLAY_THRESHOLD ? `${type} now` : active ? `${chance}% now` : "0% now",
+      current: active && nearbyObserved && !localObserved && chance < PRECIP_DISPLAY_THRESHOLD ? `${type} nearby` : active && activelyOccurring && chance < PRECIP_DISPLAY_THRESHOLD ? `${type} now` : active ? `${chance}% now` : "0% now",
       nextHour: `${this.precipValue(hourlyPeriods[1], supplemental)}% next hour`,
       amount: this.precipAmountLabel(expectedAmount, hourlyPeriods, supplemental),
       today: expectedAmount >= 0.001 ? `${this.formatInches(expectedAmount)} today` : "",
@@ -1048,9 +1491,21 @@ class WeatherService {
         severity: alert.severity || "",
         start: alert.onset || alert.effective || alert.sent || null,
         end: alert.ends || alert.expires || null,
-        level: this.hazardLevelFromText(`${event} ${alert.headline || ""} ${alert.description || ""}`, true)
+        level: this.hazardLevelFromAlert(alert)
       };
     }).filter((alert) => alert.level);
+  }
+
+  hazardLevelFromAlert(alert = {}) {
+    const textLevel = this.hazardLevelFromText(`${alert.event || ""} ${alert.headline || ""} ${alert.description || ""}`, true);
+    if (textLevel === "alert") return "alert";
+    const severity = String(alert.severity || "").toLowerCase();
+    const urgency = String(alert.urgency || "").toLowerCase();
+    const certainty = String(alert.certainty || "").toLowerCase();
+    if (severity === "extreme" || (severity === "severe" && /immediate|expected|observed|likely/.test(`${urgency} ${certainty}`))) return "alert";
+    if (textLevel === "impact") return "impact";
+    if (["moderate", "severe"].includes(severity)) return "impact";
+    return "";
   }
 
   cleanAlertText(value = "") {
@@ -1114,9 +1569,11 @@ class WeatherService {
     const supplementalIndex = this.dailyIndexForStart(dayPeriod.startTime, supplemental, dayIndex);
     const low = nightPeriod?.temperature ?? supplemental?.dailyLows?.[supplementalIndex] ?? dayPeriod.temperature;
     const high = dayPeriod.temperature ?? supplemental?.dailyHighs?.[supplementalIndex];
-    const precip = Math.max(this.precipValue(dayPeriod), this.precipValue(nightPeriod));
+    const gridChance = this.numberOrNull(supplemental?.dailyGridPrecipChances?.[supplementalIndex]) ?? 0;
+    const precip = Math.max(this.precipValue(dayPeriod, supplemental), this.precipValue(nightPeriod, supplemental), Math.round(gridChance));
     const text = `${dayPeriod.detailedForecast || ""} ${nightPeriod?.detailedForecast || ""}`;
-    const precipAmount = this.precipAmountFromText(text) || this.formatInches(supplemental?.dailyPrecipAmounts?.[supplementalIndex]);
+    const numericDailyAmount = this.formatInches(this.firstNumber(supplemental?.dailyGridPrecipAmounts?.[supplementalIndex], supplemental?.dailyPrecipAmounts?.[supplementalIndex]));
+    const precipAmount = this.showPrecipAmount(numericDailyAmount) ? numericDailyAmount : this.precipAmountFromText(text);
     const designation = this.dayDesignation(dayPeriod, nightPeriod, text, high, low, supplemental);
 
     return {
@@ -1143,9 +1600,11 @@ class WeatherService {
   buildTodayCarryover(period, todayLabel, supplemental) {
     const supplementalIndex = this.dailyIndexForStart(period?.startTime, supplemental, 0);
     const temp = period?.temperature ?? null;
-    const precip = this.precipValue(period);
+    const gridChance = this.numberOrNull(supplemental?.dailyGridPrecipChances?.[supplementalIndex]) ?? 0;
+    const precip = Math.max(this.precipValue(period, supplemental), Math.round(gridChance));
     const text = period?.detailedForecast || period?.shortForecast || "Tonight forecast is updating.";
-    const precipAmount = this.precipAmountFromText(text) || this.formatInches(supplemental?.dailyPrecipAmounts?.[supplementalIndex]);
+    const numericDailyAmount = this.formatInches(this.firstNumber(supplemental?.dailyGridPrecipAmounts?.[supplementalIndex], supplemental?.dailyPrecipAmounts?.[supplementalIndex]));
+    const precipAmount = this.showPrecipAmount(numericDailyAmount) ? numericDailyAmount : this.precipAmountFromText(text);
     const designation = this.dayDesignation(period, null, text, temp, temp, supplemental);
 
     return {
@@ -1203,7 +1662,7 @@ class WeatherService {
     const airQuality = supplemental?.dailyAirQuality?.[dayIndex] || "Checking";
     const sunrise = supplemental?.dailySunrise?.[dayIndex] || supplemental?.sunrise || "--";
     const sunset = supplemental?.dailySunset?.[dayIndex] || supplemental?.sunset || "--";
-    const cloudCover = this.readPercent(this.firstNumber(supplemental?.dailyCloudCover?.[dayIndex], supplemental?.cloudCover));
+    const cloudCover = this.readPercent(this.firstNumber(supplemental?.dailyCloudCover?.[dayIndex], supplemental?.dailyGridCloudCover?.[dayIndex], supplemental?.cloudCover, supplemental?.gridCloudCover));
     const pressureValue = this.firstNumber(supplemental?.dailyPressure?.[dayIndex], supplemental?.pressure);
     const previousPressure = this.firstNumber(supplemental?.dailyPressure?.[Math.max(0, dayIndex - 1)], supplemental?.pressure);
     const visibility = this.readDistance(this.firstNumber(supplemental?.dailyVisibility?.[dayIndex], supplemental?.visibility));
@@ -1211,7 +1670,9 @@ class WeatherService {
       ...(supplemental?.pollen?.details || []),
       ...(supplemental?.pollen?.health || [])
     ];
-    const pollenItems = pollenDetails.filter((item) => ["Moderate", "High", "Very High", "Extreme"].includes(item.category));
+    const highPollenItems = pollenDetails.filter((item) => ["High", "Very High", "Extreme"].includes(item.category));
+    const moderatePollenItems = pollenDetails.filter((item) => item.category === "Moderate");
+    const pollenItems = highPollenItems.length ? highPollenItems : moderatePollenItems;
     const pollen = pollenItems.length ? "" : "Air is Clear";
     const precipValue = [precip > 0 ? `${precip}%` : "0%", this.showPrecipAmount(precipAmount) ? precipAmount : ""].filter(Boolean).join(" / ");
     const windValue = this.dayWindLabel(wind, windDirection, gusts);
@@ -1252,38 +1713,44 @@ class WeatherService {
     const forecastLevel = this.hazardLevelFromText(forecastText, false);
     if (forecastLevel === "alert") return { level: "alert", label: "Alert" };
     if (forecastLevel === "impact") return { level: "impact", label: "Impact" };
+    if (spcOutlook?.level === "marginal" && this.hasSupportingSevereSignal(forecastText, supplemental)) return { level: "impact", label: "Impact" };
 
-    const highValue = this.numberOrNull(high);
-    const lowValue = this.numberOrNull(low);
-    if (highValue !== null && highValue >= 110) return { level: "alert", label: "Alert" };
-    if (highValue !== null && highValue >= 100) return { level: "impact", label: "Impact" };
-    if (lowValue !== null && lowValue <= -15) return { level: "alert", label: "Alert" };
-    if (lowValue !== null && lowValue <= 5) return { level: "impact", label: "Impact" };
+    const apparentHigh = this.forecastHeatIndexValue(forecastText) ?? this.numberOrNull(high);
+    const apparentLow = this.forecastWindChillValue(forecastText) ?? this.numberOrNull(low);
+    if (apparentHigh !== null && apparentHigh >= 110) return { level: "alert", label: "Alert" };
+    if (apparentHigh !== null && apparentHigh >= 105) return { level: "impact", label: "Impact" };
+    if (apparentLow !== null && apparentLow <= -25) return { level: "alert", label: "Alert" };
+    if (apparentLow !== null && apparentLow <= -15) return { level: "impact", label: "Impact" };
 
     return null;
   }
 
   hazardLevelFromText(text = "", officialProduct = false) {
     const value = String(text || "").toLowerCase();
-    const alertPatterns = [
+    const officialAlertPatterns = [
       /tornado (?:warning|watch)/,
       /severe thunderstorm (?:warning|watch)/,
       /flash flood (?:warning|watch)/,
       /flood warning/,
       /winter storm warning/,
+      /winter storm watch/,
       /ice storm warning/,
       /blizzard warning/,
       /excessive heat warning/,
+      /extreme heat warning/,
       /extreme cold warning/,
-      /high wind warning/,
-      /tornado/,
-      /damaging winds?/,
-      /large hail/,
-      /flash flood(?:ing)?/,
-      /blizzard/,
-      /significant (?:snow|ice|icing)/
+      /high wind warning/
     ];
-    if (alertPatterns.some((pattern) => pattern.test(value))) return "alert";
+    if (officialProduct && officialAlertPatterns.some((pattern) => pattern.test(value))) return "alert";
+
+    const extremeForecastPatterns = [
+      /tornado(?:es)? likely/,
+      /blizzard conditions expected/,
+      /significant icing expected/,
+      /major flash flood(?:ing)? expected/,
+      /life[- ]threatening/
+    ];
+    if (extremeForecastPatterns.some((pattern) => pattern.test(value))) return "alert";
 
     const impactOfficialPatterns = [
       /heat advisory/,
@@ -1291,12 +1758,15 @@ class WeatherService {
       /wind advisory/,
       /dense fog advisory/,
       /cold weather advisory/,
-      /air quality alert/
+      /air quality alert/,
+      /flood watch/
     ];
     if (officialProduct && impactOfficialPatterns.some((pattern) => pattern.test(value))) return "impact";
 
     const impactForecastPatterns = [
       /strong thunderstorms?/,
+      /damaging winds?/,
+      /large hail/,
       /heavy (?:rain|rainfall|snow)/,
       /localized flood(?:ing)?/,
       /ponding/,
@@ -1306,7 +1776,7 @@ class WeatherService {
       /dense fog/,
       /areas of smoke/,
       /poor air quality/,
-      /heat index values? as high as 10[0-9]/
+      /heat index values? as high as 10[5-9]/
     ];
     if (impactForecastPatterns.some((pattern) => pattern.test(value))) return "impact";
 
@@ -1319,7 +1789,28 @@ class WeatherService {
     const end = alert.end ? new Date(alert.end) : dayEnd;
     const startTime = Number.isNaN(start.getTime()) ? dayStart.getTime() : start.getTime();
     const endTime = Number.isNaN(end.getTime()) ? dayEnd.getTime() : end.getTime();
-    return startTime < dayEnd.getTime() && endTime >= dayStart.getTime();
+    const overlapStart = Math.max(startTime, dayStart.getTime());
+    const overlapEnd = Math.min(endTime, dayEnd.getTime());
+    const overlapMinutes = Math.max(0, (overlapEnd - overlapStart) / 60000);
+    if (overlapMinutes <= 0) return false;
+    if (alert.level === "alert") return true;
+    return overlapMinutes >= 90 || startTime >= dayStart.getTime() + 4 * 60 * 60 * 1000;
+  }
+
+  hasSupportingSevereSignal(text = "", supplemental = {}) {
+    const value = String(text || "").toLowerCase();
+    if (/strong thunderstorms?|severe thunderstorms?|damaging winds?|large hail|tornado|watch|warning|advisory/.test(value)) return true;
+    return (supplemental?.alertHazards || []).some((alert) => alert.level);
+  }
+
+  forecastHeatIndexValue(text = "") {
+    const match = String(text).match(/heat index(?: values?)?(?: as high as| up to| near)?\s*(-?\d+)/i);
+    return match ? this.numberOrNull(match[1]) : null;
+  }
+
+  forecastWindChillValue(text = "") {
+    const match = String(text).match(/wind chill(?: values?)?(?: as low as| down to| near)?\s*(-?\d+)/i);
+    return match ? this.numberOrNull(match[1]) : null;
   }
 
   spcOutlookForDay(dayStart, supplemental) {
@@ -1367,16 +1858,29 @@ class WeatherService {
   }
 
   isPrecipActivelyOccurring(period, supplemental, observation = null) {
+    return this.isLocalPrecipActivelyOccurring(period, supplemental, observation) || this.isNearbyPrecipActivelyOccurring(observation);
+  }
+
+  isLocalPrecipActivelyOccurring(period, supplemental, observation = null) {
     const currentAmount = this.firstNumber(supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
     if (currentAmount >= 0.001) return true;
-    const observedText = this.observedConditionText(observation);
+    const observedText = this.localObservedConditionText(observation);
     if (this.isFreshObservation(observation) && this.isPrecipText(observedText)) return true;
     const currentText = period?.shortForecast || "";
     if (/chance|possible|likely/i.test(currentText)) return false;
     return /rain|showers|drizzle|snow|sleet|ice pellets/i.test(currentText);
   }
 
-  observedConditionText(observation) {
+  isNearbyPrecipActivelyOccurring(observation = null) {
+    const nearbyText = observation?.properties?.nearbyPrecipitationText || "";
+    const distance = this.numberOrNull(observation?.properties?.nearbyPrecipitationDistance);
+    return this.isFreshObservation(observation)
+      && distance !== null
+      && distance <= MAX_NEARBY_PRECIP_STATION_MILES
+      && this.isPrecipText(nearbyText);
+  }
+
+  localObservedConditionText(observation) {
     const properties = observation?.properties;
     if (!properties) return "";
     const presentWeather = Array.isArray(properties.presentWeather)
@@ -1386,7 +1890,35 @@ class WeatherService {
       properties.textDescription,
       properties.rawMessage,
       presentWeather,
-      properties.nearbyPrecipitationText
+      properties.localPrecipitationText
+    ].filter(Boolean).join(" ");
+  }
+
+  visibleObservedConditionText(observation) {
+    const properties = observation?.properties;
+    if (!properties) return "";
+    const description = this.cleanWeatherDescription(properties.textDescription);
+    if (description) return description;
+    const presentWeather = Array.isArray(properties.presentWeather)
+      ? properties.presentWeather
+        .map((item) => this.cleanWeatherDescription(item?.weather))
+        .filter(Boolean)
+      : [];
+    return [...new Set(presentWeather)].slice(0, 3).join(" and ");
+  }
+
+  cleanWeatherDescription(value = "") {
+    const text = String(value || "").trim().replace(/\s+/g, " ");
+    if (!text || text.length > 64) return "";
+    if (/\b(?:AUTO|RMK|KT|SM|SLP|A\d{4}|FEW\d{3}|SCT\d{3}|BKN\d{3}|OVC\d{3}|TSRA|RAE|RAB|TSE|TSB|\+RA|-RA|BR|FG|HZ|DZ|SN)\b/i.test(text)) return "";
+    if (/\b[A-Z]{4}\b/.test(text)) return "";
+    return text;
+  }
+
+  observedConditionText(observation) {
+    return [
+      this.localObservedConditionText(observation),
+      observation?.properties?.nearbyPrecipitationText
     ].filter(Boolean).join(" ");
   }
 
@@ -1396,9 +1928,10 @@ class WeatherService {
 
   precipValue(period, supplemental) {
     const nwsValue = period?.probabilityOfPrecipitation?.value;
-    const fallbackValue = supplemental?.precipChance;
-    const numericValue = this.firstNumber(nwsValue, fallbackValue);
-    if (numericValue !== null && numericValue > 0) return Math.round(numericValue);
+    const numericNws = this.numberOrNull(nwsValue);
+    if (numericNws !== null) return Math.round(Math.max(0, numericNws));
+    const fallbackValue = this.firstNumber(supplemental?.gridPrecipChance, supplemental?.precipChance);
+    if (fallbackValue !== null) return Math.round(Math.max(0, fallbackValue));
     return this.precipChanceFromText(`${period?.shortForecast || ""} ${period?.detailedForecast || ""}`);
   }
 
@@ -1408,7 +1941,6 @@ class WeatherService {
     if (/likely|numerous|widespread/.test(value)) return 60;
     if (/slight chance|isolated|few/.test(value)) return PRECIP_DISPLAY_THRESHOLD;
     if (/chance|scattered/.test(value)) return 30;
-    if (/rain|showers|drizzle|snow|sleet|ice pellets|thunderstorm|storm/.test(value) && !/possible/.test(value)) return PRECIP_DISPLAY_THRESHOLD;
     return 0;
   }
 
@@ -1425,23 +1957,23 @@ class WeatherService {
   }
 
   expectedPrecipAmount(periods, supplemental) {
+    const minutelyAmount = this.sumNumeric(supplemental?.minutelyPrecipAmounts?.slice(0, 5));
+    if (minutelyAmount > 0) return minutelyAmount;
+    const currentAmount = this.firstNumber(supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
+    if (currentAmount > 0) return currentAmount;
+    const hourlyAmount = this.sumNumeric(supplemental?.hourlyPrecipAmounts?.slice(0, 2));
+    if (hourlyAmount > 0) return hourlyAmount;
     const text = periods.slice(0, 12).map((period) => period.detailedForecast || period.shortForecast || "").join(" ");
-    const parsed = this.precipAmountNumber(this.precipAmountFromText(text));
-    if (parsed > 0) return parsed;
-
-    const fallbackAmount = this.firstNumber(supplemental?.dailyPrecipAmount, supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
-    if (fallbackAmount > 0) return fallbackAmount;
-
-    return 0;
+    return this.precipAmountNumber(this.precipAmountFromText(text));
   }
 
   precipAmountLabel(amount, periods, supplemental) {
     if (amount > 0) return amount < 0.01 ? "<0.01 in" : `${amount.toFixed(2)} in`;
+    const fallbackAmount = this.firstNumber(supplemental?.dailyPrecipAmount, supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
+    if (fallbackAmount > 0) return this.formatInches(fallbackAmount);
     const text = periods.slice(0, 12).map((period) => period.detailedForecast || period.shortForecast || "").join(" ");
     const textAmount = this.precipAmountFromText(text);
     if (textAmount) return textAmount;
-    const fallbackAmount = this.firstNumber(supplemental?.dailyPrecipAmount, supplemental?.precipitationAmount, supplemental?.rain, supplemental?.showers, supplemental?.snowfall);
-    if (fallbackAmount > 0) return this.formatInches(fallbackAmount);
     return "0 in";
   }
 
@@ -1449,6 +1981,13 @@ class WeatherService {
     const chance = this.precipValue(period, supplemental);
     if (precipitation?.active || chance > 0) return precipitation?.amount || "Trace";
     return "0 in";
+  }
+
+  sumNumeric(values = []) {
+    return values
+      .map((value) => this.numberOrNull(value))
+      .filter((value) => value !== null && value > 0)
+      .reduce((total, value) => total + value, 0);
   }
 
   precipAmountNumber(value) {
@@ -1472,10 +2011,16 @@ class WeatherService {
   }
 
   nextHourPrecipTimeline(periods, supplemental) {
+    const minutelyAnchors = this.precipMinutelyAnchors(supplemental);
+    if (minutelyAnchors.length) return this.interpolatePrecipAnchors(minutelyAnchors);
     const chanceAnchors = periods.slice(0, 2).map((period) => this.precipValue(period, supplemental));
     const amountAnchors = this.precipAmountAnchors(supplemental);
     const anchors = amountAnchors.length ? amountAnchors : chanceAnchors.map((chance) => ({ chance, amount: null }));
     if (!anchors.length) return [];
+    return this.interpolatePrecipAnchors(anchors);
+  }
+
+  interpolatePrecipAnchors(anchors) {
     const values = [];
     for (let index = 0; index < 21; index += 1) {
       const position = (index / 20) * Math.max(1, anchors.length - 1);
@@ -1489,6 +2034,22 @@ class WeatherService {
       values.push({ chance: Math.round(chance), amount });
     }
     return values;
+  }
+
+  precipMinutelyAnchors(supplemental) {
+    const chances = supplemental?.minutelyPrecipChances || [];
+    const totals = (supplemental?.minutelyPrecipAmounts || []).map((value, index) => {
+      const amount = this.firstNumber(value, supplemental?.minutelyRain?.[index], supplemental?.minutelyShowers?.[index], supplemental?.minutelySnowfall?.[index]);
+      return amount ?? 0;
+    });
+    const count = Math.min(5, Math.max(chances.length, totals.length));
+    const anchors = [];
+    for (let index = 0; index < count; index += 1) {
+      const chance = this.numberOrNull(chances[index]) ?? 0;
+      const amount = this.numberOrNull(totals[index]) ?? 0;
+      anchors.push({ chance, amount });
+    }
+    return anchors.some((item) => item.chance >= PRECIP_DISPLAY_THRESHOLD || item.amount >= 0.001) ? anchors : [];
   }
 
   precipAmountAnchors(supplemental) {
@@ -1527,6 +2088,15 @@ class WeatherService {
     const validHumidity = [nwsHumidity, fallbackHumidity].find((value) => Number.isFinite(value) && value > 0 && value <= 100);
     if (Number.isFinite(validHumidity)) return `${Math.round(validHumidity)}%`;
     return "0%";
+  }
+
+  readObservedWind(observation) {
+    if (!this.isFreshObservation(observation)) return "";
+    const speedMeters = this.numberOrNull(observation?.properties?.windSpeed?.value);
+    const directionDegrees = this.numberOrNull(observation?.properties?.windDirection?.value);
+    if (speedMeters === null) return "";
+    const mph = Math.max(0, Math.round(speedMeters * 2.236936));
+    return [this.windDirectionLabel(directionDegrees), `${mph} mph`].filter(Boolean).join(" ");
   }
 
   dewPointFahrenheit(observation, supplemental) {
@@ -1591,6 +2161,15 @@ class WeatherService {
     return this.formatPressureInHg(fallbackHpaValue);
   }
 
+  observationPressureHpa(observation) {
+    const pascals = this.numberOrNull(observation?.properties?.barometricPressure?.value);
+    return pascals === null ? null : pascals / 100;
+  }
+
+  currentPressureHpa(observation, supplemental) {
+    return this.firstNumber(this.observationPressureHpa(observation), supplemental?.pressure);
+  }
+
   formatPressureInHg(value) {
     const hpa = this.numberOrNull(value);
     if (hpa === null) return "--";
@@ -1607,6 +2186,38 @@ class WeatherService {
     return "Steady";
   }
 
+  pressureTrendFromHistory(location, observation, supplemental) {
+    const current = this.currentPressureHpa(observation, supplemental);
+    if (current === null) return "Steady";
+    const now = Date.now();
+    const key = `${Number(location.lat).toFixed(2)},${Number(location.lon).toFixed(2)}`;
+    let cache = {};
+    try {
+      cache = JSON.parse(localStorage.getItem(PRESSURE_HISTORY_STORAGE_KEY) || "{}");
+    } catch {
+      cache = {};
+    }
+    const history = Array.isArray(cache[key]) ? cache[key] : [];
+    const recent = [...history, { time: now, value: current }]
+      .filter((item) => now - Number(item.time) <= 4 * 60 * 60 * 1000)
+      .sort((a, b) => a.time - b.time);
+    cache[key] = recent;
+    try {
+      localStorage.setItem(PRESSURE_HISTORY_STORAGE_KEY, JSON.stringify(cache));
+    } catch {
+      // Pressure history is a convenience label only.
+    }
+    const findPrevious = (minimumAgeMs) => {
+      for (let index = recent.length - 1; index >= 0; index -= 1) {
+        if (now - recent[index].time >= minimumAgeMs) return recent[index];
+      }
+      return null;
+    };
+    const target = findPrevious(3 * 60 * 60 * 1000) || findPrevious(60 * 60 * 1000) || recent[0];
+    if (!target || target.time === now) return "Steady";
+    return this.pressureTrend(current, target.value);
+  }
+
   dayWindLabel(wind, direction, gusts) {
     const speed = String(wind || "0 mph").trim();
     const dir = String(direction || "").trim();
@@ -1615,11 +2226,15 @@ class WeatherService {
     return gustText && gustText !== "0 mph" ? `${base} (Gusts up to ${gustText})` : base;
   }
 
-  readWindGust(period, supplemental) {
-    const textGust = this.gustFromText(`${period?.detailedForecast || ""} ${period?.shortForecast || ""}`);
-    if (textGust) return textGust;
+  readWindGust(period, supplemental, observation = null) {
+    if (this.isFreshObservation(observation)) {
+      const observedGust = this.numberOrNull(observation?.properties?.windGust?.value);
+      if (observedGust !== null) return `${Math.round(observedGust * 2.236936)} mph`;
+    }
     const gust = this.numberOrNull(supplemental?.windGusts);
-    return gust === null ? "0 mph" : `${Math.round(gust)} mph`;
+    if (gust !== null) return `${Math.round(gust)} mph`;
+    const textGust = this.gustFromText(`${period?.detailedForecast || ""} ${period?.shortForecast || ""}`);
+    return textGust || "0 mph";
   }
 
   windFromText(text = "") {
@@ -1778,6 +2393,7 @@ let currentLocation = loadSavedLocation();
 let autoLocationEnabled = loadAutoLocationEnabled();
 let currentPollenDetails = [];
 let currentHealthDetails = [];
+let currentPollenNote = "";
 let dashboardRequestId = 0;
 let locationRequestId = 0;
 let lastHourlyHours = [];
@@ -1982,6 +2598,7 @@ function renderDetails(details, options = {}) {
   elements.detailsGrid.replaceChildren();
   currentPollenDetails = [];
   currentHealthDetails = [];
+  currentPollenNote = "";
   details.forEach((item) => {
     const card = document.createElement("article");
     const icon = document.createElement("img");
@@ -2002,6 +2619,7 @@ function renderDetails(details, options = {}) {
     } else if (item.type === "pollen") {
       currentPollenDetails = item.details || [];
       currentHealthDetails = item.health || [];
+      currentPollenNote = item.note || "";
       card.classList.add("is-clickable");
       card.setAttribute("role", "button");
       card.setAttribute("tabindex", "0");
@@ -2102,6 +2720,8 @@ function renderAllergenAlerts(pollenDetails = [], healthDetails = []) {
 function shortAllergenLabel(label = "") {
   return label
     .replace(" Pollen", "")
+    .replace(" Allergy Risk", "")
+    .replace("Outdoor ", "")
     .replace("Dust & Dander", "Dander")
     .replace("Sinus Pressure", "Sinus")
     .replace("Common Cold", "Cold");
@@ -2109,6 +2729,10 @@ function shortAllergenLabel(label = "") {
 
 function renderPollenPanel() {
   elements.pollenList.replaceChildren();
+  if (elements.pollenSummary) {
+    elements.pollenSummary.hidden = !currentPollenNote;
+    elements.pollenSummary.textContent = currentPollenNote;
+  }
   const details = currentPollenDetails.length ? currentPollenDetails : [
     { label: "Tree Pollen", value: 0, category: "Low" },
     { label: "Ragweed Pollen", value: 0, category: "Low" },
@@ -2152,7 +2776,9 @@ function renderPollenCard(item) {
   card.className = `pollen-card ${item.category.toLowerCase().replace(/\s+/g, "-")}`;
   setIcon(icon, item.icon || "pollen.svg", "");
   label.textContent = item.label;
-  value.textContent = item.category;
+  value.textContent = item.value === null || item.value === undefined || item.value === ""
+    ? item.category
+    : `${Number(item.value).toLocaleString()} ${item.category}`.trim();
   card.append(icon, label, value);
   return card;
 }
@@ -2921,30 +3547,57 @@ function animateTemperatureRefresh() {
 
 async function renderDashboard() {
   const requestId = ++dashboardRequestId;
-  const location = await locationForDashboard();
-  if (requestId !== dashboardRequestId) return;
-  setText("locationLabel", location.label);
-  updateRadarLocation(location);
-  const data = await weatherService.getWeather(location);
-  if (requestId !== dashboardRequestId) return;
-  activeDashboardData = data;
-  activeHourlyIndex = 0;
-  activeHourlyMetric = "precip";
-  syncHourlyMetricControls();
-  renderCurrentWeather(data);
-  renderSummaryStats(data.summaryStats);
-  renderDetails(hourlyDetailCards(getCurrentHourForecast(Array.isArray(data.hourly) ? data.hourly : []).slice(0, 8)[0], data.details));
-  renderPrecipitation(data.precipitation);
-  renderAlert(data.alert);
-  renderHourly(data.hourly);
-  renderDaily(data.daily);
-  if (data.dailyOutlookPromise) {
-    data.dailyOutlookPromise.then((daily) => {
-      if (requestId !== dashboardRequestId || !Array.isArray(daily)) return;
-      renderDaily(daily);
-    });
+  try {
+    const location = await locationForDashboard();
+    if (requestId !== dashboardRequestId) return;
+    setText("locationLabel", location.label);
+    updateRadarLocation(location);
+    const data = await weatherService.getWeather(location);
+    if (requestId !== dashboardRequestId) return;
+    activeDashboardData = data;
+    activeHourlyIndex = 0;
+    activeHourlyMetric = "precip";
+    syncHourlyMetricControls();
+    renderCurrentWeather(data);
+    renderSummaryStats(data.summaryStats);
+    renderDetails(hourlyDetailCards(getCurrentHourForecast(Array.isArray(data.hourly) ? data.hourly : []).slice(0, 8)[0], data.details));
+    renderPrecipitation(data.precipitation);
+    renderAlert(data.alert);
+    renderHourly(data.hourly);
+    renderDaily(data.daily);
+    if (data.dailyOutlookPromise) {
+      data.dailyOutlookPromise.then((daily) => {
+        if (requestId !== dashboardRequestId || !Array.isArray(daily)) return;
+        renderDaily(daily);
+      }).catch((error) => console.warn("Daily outlook update skipped.", error));
+    }
+    if (data.supplementalUpdatePromise) {
+      data.supplementalUpdatePromise.then((update) => {
+        if (requestId !== dashboardRequestId || !update) return;
+        activeDashboardData.details = update.details || activeDashboardData.details;
+        if (Array.isArray(update.daily) && update.daily.length) {
+          activeDashboardData.daily = update.daily;
+          lastDailyDays = update.daily;
+          renderDaily(update.daily);
+        }
+        const hour = getCurrentHourForecast(Array.isArray(activeDashboardData.hourly) ? activeDashboardData.hourly : []).slice(0, 8)[activeHourlyIndex];
+        renderDetails(hourlyDetailCards(hour, activeDashboardData.details));
+      }).catch((error) => console.warn("Supplemental dashboard update skipped.", error));
+    }
+    animateTemperatureRefresh();
+  } catch (error) {
+    console.warn("Dashboard render failed.", error);
+    const fallback = weatherService.clone(emptyWeather);
+    fallback.location = { city: currentLocation?.label || DEFAULT_LOCATION.label };
+    activeDashboardData = fallback;
+    renderCurrentWeather(fallback);
+    renderSummaryStats(fallback.summaryStats);
+    renderDetails(fallback.details);
+    renderPrecipitation(fallback.precipitation);
+    renderAlert(fallback.alert);
+    renderHourly(fallback.hourly);
+    renderDaily(fallback.daily);
   }
-  animateTemperatureRefresh();
 }
 
 function registerServiceWorker() {
