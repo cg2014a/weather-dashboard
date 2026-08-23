@@ -127,8 +127,9 @@
             <button id="pollenClose" type="button" aria-label="Close pollen details">Back</button>
           </div>
           <div class="pollen-list" id="pollenList"></div>
+          <p class="pollen-attribution">Pollen data by <a href="https://atmospore.com/" target="_blank" rel="noopener noreferrer">Atmospore</a></p>
         </section>
-        <footer class="source-footer">Weather source: NWS · Fallbacks: EPA/AirNow/Open-Meteo · Allergy: SkyStation local estimate · Radar: Windy · Version v1-162</footer>
+        <footer class="source-footer">Weather source: NWS · Fallbacks: EPA/AirNow/Open-Meteo · Allergy: Atmospore / SkyStation · Radar: Windy · Version v1-163</footer>
       </section>
     </main>
     <section class="settings-panel" id="settingsPanel" aria-label="Location settings" hidden>
@@ -161,6 +162,7 @@
         <p id="locationStatus" class="location-status" role="status"></p>
       </form>
     </section>
+    <script src="atmospore-client.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

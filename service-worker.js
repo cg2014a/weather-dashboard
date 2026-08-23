@@ -1,8 +1,9 @@
-const CACHE_NAME = "skystation-v1-162";
+const CACHE_NAME = "skystation-v1-163";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./style.css",
+  "./atmospore-client.js",
   "./app.js",
   "./manifest.json",
   "./offline.html",

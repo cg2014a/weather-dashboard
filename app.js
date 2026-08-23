@@ -69,6 +69,7 @@ const emptyWeather = {
 class WeatherService {
   constructor() {
     this.pendingAirQualityPayloads = new Map();
+    this.pendingAtmosporePollenPayloads = new Map();
   }
 
   async getWeather(location = DEFAULT_LOCATION) {
@@ -410,11 +411,13 @@ class WeatherService {
   }
 
   async getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, baseSupplemental) {
-    const airQualityResult = await Promise.allSettled([
-      this.withTimeout(this.getAirQuality(location), 5000, "air quality")
+    const [airQualityResult, atmosporePollenResult] = await Promise.allSettled([
+      this.withTimeout(this.getAirQuality(location), 5000, "air quality"),
+      this.getAtmosporePollen(location)
     ]);
-    const airQuality = this.settledValue(airQualityResult[0]);
-    const pollen = baseSupplemental?.pollen || this.getPollenData(location, baseSupplemental, { currentPeriod, dailyPeriods, observation });
+    const airQuality = this.settledValue(airQualityResult);
+    const fallbackPollen = baseSupplemental?.pollen || this.getPollenData(location, baseSupplemental, { currentPeriod, dailyPeriods, observation });
+    const pollen = this.mergeAtmosporePollen(fallbackPollen, this.settledValue(atmosporePollenResult));
     const updatedSupplemental = {
       ...baseSupplemental,
       airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : baseSupplemental.airQualityLabel,
@@ -442,6 +445,84 @@ class WeatherService {
 
   getPollenData(location, weather = {}, context = {}) {
     return this.calculateAllergyRisk(location, weather, context);
+  }
+
+  async getAtmosporePollen(location) {
+    const client = globalThis.SkyStationAtmosporeClient;
+    const lat = this.numberOrNull(location?.lat);
+    const lon = this.numberOrNull(location?.lon);
+    if (!client?.getPollenData || lat === null || lon === null) return null;
+    const key = `${lat},${lon}`;
+    if (!this.pendingAtmosporePollenPayloads.has(key)) {
+      const request = client.getPollenData({ lat, lon })
+        .catch((error) => {
+          console.debug("Atmospore pollen update skipped.", error);
+          return null;
+        })
+        .finally(() => this.pendingAtmosporePollenPayloads.delete(key));
+      this.pendingAtmosporePollenPayloads.set(key, request);
+    }
+    return this.pendingAtmosporePollenPayloads.get(key);
+  }
+
+  atmosporeScore(level) {
+    // Existing grouped health scoring consumes a 0-100 pollen severity; provider risk text remains unchanged for display.
+    return { Low: 10, Moderate: 35, High: 60, "Very High": 85 }[level] ?? 0;
+  }
+
+  mergeAtmosporePollen(fallback, providerData) {
+    const baseline = fallback && Array.isArray(fallback.details) ? fallback : this.emptyPollen();
+    if (!providerData?.categories) return baseline;
+    const categoryLabels = {
+      tree: "Tree Allergy Risk",
+      grass: "Grass Allergy Risk",
+      weed: "Weed Allergy Risk",
+      ragweed: "Ragweed Allergy Risk"
+    };
+    const details = baseline.details.map((detail) => {
+      const key = Object.keys(categoryLabels).find((category) => categoryLabels[category] === detail.label);
+      const provider = key ? providerData.categories[key] : null;
+      if (!provider?.riskLevel) return detail;
+      return {
+        ...detail,
+        value: null,
+        score: this.atmosporeScore(provider.riskLevel),
+        category: provider.riskLevel,
+        source: "atmospore",
+        sourceName: "Atmospore",
+        concentration: provider.value,
+        units: providerData.units || null,
+        providerRisk: provider.riskLevel,
+        topSpecies: provider.topSpecies,
+        topSpeciesId: provider.topSpeciesId,
+        speciesCount: provider.speciesCount,
+        activeSpeciesCount: provider.activeSpeciesCount,
+        elevatedSpeciesCount: provider.elevatedSpeciesCount,
+        activeSpecies: provider.activeSpecies,
+        elevatedSpecies: provider.elevatedSpecies,
+        description: "Atmospore pollen forecast data."
+      };
+    });
+    const majorRisks = details.filter((item) => item.label !== "Outdoor Dust Risk");
+    const dominant = majorRisks.slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0] || details[0];
+    const peak = Math.max(...majorRisks.map((item) => item.score || 0), 0);
+    const usesAtmospore = details.some((item) => item.source === "atmospore");
+    return {
+      ...baseline,
+      value: peak,
+      category: this.allergyRiskLevel(peak),
+      overall: { score: peak, level: this.allergyRiskLevel(peak) },
+      dominantAllergen: dominant?.label || "",
+      source: usesAtmospore ? "Mixed Atmospore and SkyStation Allergy Risk" : baseline.source,
+      sourceName: usesAtmospore ? "Atmospore with SkyStation fallback" : baseline.sourceName,
+      measured: false,
+      estimated: true,
+      updatedAt: providerData.generatedAt || baseline.updatedAt,
+      note: usesAtmospore
+        ? "Pollen risk uses Atmospore forecast data when available, with local weather-based estimates as fallback. Mold and dust are estimated from local weather conditions."
+        : baseline.note,
+      details
+    };
   }
 
   calculateAllergyRisk(location, weather = {}, context = {}) {
@@ -581,6 +662,14 @@ class WeatherService {
       score: Math.round(score),
       category: this.allergyRiskLevel(score),
       icon,
+      source: "calculated",
+      sourceName: "SkyStation Allergy Risk",
+      concentration: null,
+      units: null,
+      providerRisk: null,
+      topSpecies: null,
+      activeSpecies: [],
+      elevatedSpecies: [],
       components: typeof risk === "object" ? risk.components : {},
       description: "Estimated from season and local weather conditions."
     };
@@ -2780,6 +2869,20 @@ function renderPollenCard(item) {
     ? item.category
     : `${Number(item.value).toLocaleString()} ${item.category}`.trim();
   card.append(icon, label, value);
+  const species = Array.isArray(item.elevatedSpecies) && item.elevatedSpecies.length
+    ? item.elevatedSpecies
+    : Array.isArray(item.activeSpecies) ? item.activeSpecies : [];
+  const visibleSpecies = species.filter((speciesItem) => speciesItem?.name && speciesItem?.riskLevel).slice(0, 6);
+  if (visibleSpecies.length) {
+    const speciesList = document.createElement("ul");
+    speciesList.className = "pollen-species-list";
+    visibleSpecies.forEach((speciesItem) => {
+      const speciesRow = document.createElement("li");
+      speciesRow.textContent = `${speciesItem.name} - ${speciesItem.riskLevel}`;
+      speciesList.appendChild(speciesRow);
+    });
+    card.appendChild(speciesList);
+  }
   return card;
 }
 
@@ -3582,6 +3685,7 @@ async function renderDashboard() {
         }
         const hour = getCurrentHourForecast(Array.isArray(activeDashboardData.hourly) ? activeDashboardData.hourly : []).slice(0, 8)[activeHourlyIndex];
         renderDetails(hourlyDetailCards(hour, activeDashboardData.details));
+        if (!elements.pollenPanel.hidden) renderPollenPanel();
       }).catch((error) => console.warn("Supplemental dashboard update skipped.", error));
     }
     animateTemperatureRefresh();
