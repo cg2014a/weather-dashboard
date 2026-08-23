@@ -3812,7 +3812,6 @@ function toggleSettings(force) {
     refreshMorningNotificationState();
     elements.locationInput.value = currentLocation.query || currentLocation.label;
     elements.locationStatus.textContent = "";
-    elements.locationInput.focus();
   }
 }
 
