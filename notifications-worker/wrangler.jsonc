@@ -8,7 +8,7 @@
     {
       "binding": "NOTIFICATIONS_DB",
       "database_name": "skystation-notifications",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "21d9ef0b-a904-46dc-98c4-6289f887b70c",
       "migrations_dir": "migrations"
     }
   ],
