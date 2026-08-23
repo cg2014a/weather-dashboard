@@ -240,7 +240,7 @@ async function sendTest(request, env, origin) {
     UPDATE push_subscriptions SET test_cooldown_until = ?1, updated_at = ?2
     WHERE id = ?3 AND test_cooldown_until <= ?2
   `).bind(now + TEST_COOLDOWN_MS, now, record.id).run();
-  if (!claim.meta.changed_db_rows) return json({ ok: false, error: "Please wait before sending another test." }, 429, origin);
+  if (!claim.meta.changes) return json({ ok: false, error: "Please wait before sending another test." }, 429, origin);
   try {
     await sendToRecord(record, {
       title: "SkyStation Test",
