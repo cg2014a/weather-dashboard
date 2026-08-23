@@ -411,17 +411,21 @@ class WeatherService {
   }
 
   async getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, baseSupplemental) {
+    const startDate = this.firstDailyForecastDate(dailyPeriods);
     const [airQualityResult, atmosporePollenResult] = await Promise.allSettled([
       this.withTimeout(this.getAirQuality(location), 5000, "air quality"),
-      this.getAtmosporePollen(location)
+      this.getAtmosporePollen(location, { startDate, forecastDays: 7 })
     ]);
     const airQuality = this.settledValue(airQualityResult);
+    const providerPollen = this.settledValue(atmosporePollenResult);
     const fallbackPollen = baseSupplemental?.pollen || this.getPollenData(location, baseSupplemental, { currentPeriod, dailyPeriods, observation });
-    const pollen = this.mergeAtmosporePollen(fallbackPollen, this.settledValue(atmosporePollenResult));
+    const pollen = this.mergeAtmosporePollen(fallbackPollen, providerPollen);
+    const dailyPollenByDate = this.buildDailyPollenByDate(location, dailyPeriods, baseSupplemental, providerPollen, airQuality);
     const updatedSupplemental = {
       ...baseSupplemental,
       airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : baseSupplemental.airQualityLabel,
       dailyAirQuality: airQuality?.dailyAirQuality || baseSupplemental.dailyAirQuality || [],
+      dailyPollenByDate,
       pollen: {
         ...pollen,
         health: this.mapHealthRisks({ ...baseSupplemental, pollen }, airQuality)
@@ -447,14 +451,16 @@ class WeatherService {
     return this.calculateAllergyRisk(location, weather, context);
   }
 
-  async getAtmosporePollen(location) {
+  async getAtmosporePollen(location, options = {}) {
     const client = globalThis.SkyStationAtmosporeClient;
     const lat = this.numberOrNull(location?.lat);
     const lon = this.numberOrNull(location?.lon);
     if (!client?.getPollenData || lat === null || lon === null) return null;
-    const key = `${lat},${lon}`;
+    const startDate = /^\d{4}-\d{2}-\d{2}$/.test(String(options?.startDate || "")) ? options.startDate : "";
+    const forecastDays = Math.max(1, Math.min(7, Math.round(Number(options?.forecastDays) || 7)));
+    const key = `${lat},${lon},${startDate},${forecastDays}`;
     if (!this.pendingAtmosporePollenPayloads.has(key)) {
-      const request = client.getPollenData({ lat, lon })
+      const request = client.getPollenData({ lat, lon }, { startDate, forecastDays })
         .catch((error) => {
           console.debug("Atmospore pollen update skipped.", error);
           return null;
@@ -522,6 +528,64 @@ class WeatherService {
         ? "Pollen risk uses Atmospore forecast data when available, with local weather-based estimates as fallback. Mold and dust are estimated from local weather conditions."
         : baseline.note,
       details
+    };
+  }
+
+  firstDailyForecastDate(periods = []) {
+    const daytime = Array.isArray(periods) ? periods.find((period) => period?.isDaytime) : null;
+    return this.dateKey(daytime?.startTime || periods?.[0]?.startTime);
+  }
+
+  buildDailyPollenByDate(location, periods, supplemental, providerData, airQuality) {
+    if (!Array.isArray(periods)) return {};
+    const days = {};
+
+    periods.forEach((dayPeriod, index) => {
+      if (!dayPeriod?.isDaytime) return;
+      const date = this.dateKey(dayPeriod.startTime);
+      if (!date || days[date]) return;
+
+      const dailyIndex = this.dailyIndexForStart(dayPeriod.startTime, supplemental, index);
+      const nightPeriod = periods.slice(index + 1).find((period) => !period?.isDaytime) || null;
+      const weather = this.dailyAllergyWeather(dayPeriod, nightPeriod, supplemental, dailyIndex);
+      const context = {
+        date,
+        currentPeriod: dayPeriod,
+        dailyPeriods: [dayPeriod, nightPeriod].filter(Boolean)
+      };
+      const baseline = this.getPollenData(location, weather, context);
+      const pollen = this.mergeAtmosporePollen(baseline, providerData?.days?.[date]);
+      days[date] = {
+        ...pollen,
+        health: this.mapHealthRisks({ ...weather, pollen }, airQuality)
+      };
+    });
+
+    return days;
+  }
+
+  dailyAllergyWeather(dayPeriod, nightPeriod, supplemental, dayIndex) {
+    const forecastText = `${dayPeriod?.shortForecast || ""} ${dayPeriod?.detailedForecast || ""} ${nightPeriod?.shortForecast || ""} ${nightPeriod?.detailedForecast || ""}`;
+    const precipitationAmount = this.firstNumber(
+      supplemental?.dailyGridPrecipAmounts?.[dayIndex],
+      supplemental?.dailyPrecipAmounts?.[dayIndex]
+    ) || 0;
+    const pressure = this.firstNumber(supplemental?.dailyPressure?.[dayIndex], supplemental?.pressure);
+    const previousPressure = this.firstNumber(supplemental?.dailyPressure?.[Math.max(0, dayIndex - 1)], supplemental?.pressure);
+    return {
+      temperature: dayPeriod?.temperature,
+      high: dayPeriod?.temperature ?? supplemental?.dailyHighs?.[dayIndex],
+      low: nightPeriod?.temperature ?? supplemental?.dailyLows?.[dayIndex],
+      humidity: this.firstNumber(supplemental?.dailyHumidity?.[dayIndex], supplemental?.humidity),
+      dewPoint: this.firstNumber(supplemental?.dailyDewPoints?.[dayIndex], supplemental?.dewPoint),
+      windSpeed: this.firstNumber(supplemental?.dailyWindSpeeds?.[dayIndex], this.mphFromText(dayPeriod?.windSpeed)),
+      windGusts: this.firstNumber(supplemental?.dailyWindGusts?.[dayIndex], this.mphFromText(forecastText)),
+      gridPrecipChance: this.firstNumber(supplemental?.dailyGridPrecipChances?.[dayIndex]),
+      precipitationAmount,
+      cloudCover: this.firstNumber(supplemental?.dailyCloudCover?.[dayIndex], supplemental?.dailyGridCloudCover?.[dayIndex], supplemental?.cloudCover),
+      pressure,
+      pressureTrend: this.pressureTrend(pressure, previousPressure),
+      uvIndex: this.firstNumber(supplemental?.dailyUvIndexes?.[dayIndex], supplemental?.dailyHourlyUvIndexes?.[dayIndex], supplemental?.uvIndex)
     };
   }
 
@@ -1755,9 +1819,10 @@ class WeatherService {
     const pressureValue = this.firstNumber(supplemental?.dailyPressure?.[dayIndex], supplemental?.pressure);
     const previousPressure = this.firstNumber(supplemental?.dailyPressure?.[Math.max(0, dayIndex - 1)], supplemental?.pressure);
     const visibility = this.readDistance(this.firstNumber(supplemental?.dailyVisibility?.[dayIndex], supplemental?.visibility));
+    const dailyPollen = supplemental?.dailyPollenByDate?.[this.dateKey(dayPeriod?.startTime)] || supplemental?.pollen || {};
     const pollenDetails = [
-      ...(supplemental?.pollen?.details || []),
-      ...(supplemental?.pollen?.health || [])
+      ...(dailyPollen.details || []),
+      ...(dailyPollen.health || [])
     ];
     const highPollenItems = pollenDetails.filter((item) => ["High", "Very High", "Extreme"].includes(item.category));
     const moderatePollenItems = pollenDetails.filter((item) => item.category === "Moderate");

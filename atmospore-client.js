@@ -45,6 +45,28 @@
     };
   }
 
+  function isDateKey(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+  }
+
+  function normalizeCategories(source) {
+    return Object.fromEntries(
+      ["tree", "grass", "weed", "ragweed"]
+        .map((key) => [key, normalizeCategory(source?.[key])])
+        .filter(([, value]) => value)
+    );
+  }
+
+  function normalizeDays(days) {
+    if (!days || typeof days !== "object" || Array.isArray(days)) return {};
+    return Object.fromEntries(
+      Object.entries(days)
+        .filter(([date]) => isDateKey(date))
+        .map(([date, value]) => [date, normalizeCategories(value)])
+        .filter(([, categories]) => Object.keys(categories).length)
+    );
+  }
+
   function validCoordinates(location) {
     const lat = Number(location?.lat);
     const lon = Number(location?.lon);
@@ -53,9 +75,12 @@
       && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
   }
 
-  async function getPollenData(location, { timeoutMs = 6500 } = {}) {
+  async function getPollenData(location, { timeoutMs = 6500, startDate = "", forecastDays = 7 } = {}) {
     if (!validCoordinates(location) || typeof fetch !== "function") return null;
     const params = new URLSearchParams({ lat: String(Number(location.lat)), lon: String(Number(location.lon)) });
+    if (isDateKey(startDate)) params.set("start_date", startDate);
+    const requestedDays = Math.max(1, Math.min(7, Math.round(Number(forecastDays) || 7)));
+    params.set("forecast_days", String(requestedDays));
     const controller = typeof AbortController === "function" ? new AbortController() : null;
     const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
@@ -68,19 +93,18 @@
       if (!response.ok) return null;
       const payload = await response.json();
       if (!payload || String(payload.provider || "").toLowerCase() !== "atmospore") return null;
-      const categories = Object.fromEntries(
-        ["tree", "grass", "weed", "ragweed"]
-          .map((key) => [key, normalizeCategory(payload[key])])
-          .filter(([, value]) => value)
-      );
-      if (!Object.keys(categories).length) return null;
+      const categories = normalizeCategories(payload);
+      const days = normalizeDays(payload.days);
+      if (!Object.keys(categories).length && !Object.keys(days).length) return null;
       return {
         provider: "atmospore",
         date: String(payload.date || ""),
         generatedAt: String(payload.generatedAt || ""),
         units: String(payload.units || ""),
         location: validCoordinates(payload.location) ? { lat: Number(payload.location.lat), lon: Number(payload.location.lon) } : null,
-        categories
+        categories,
+        days,
+        forecastDays: Math.max(0, Math.round(Number(payload.forecastDays) || Object.keys(days).length))
       };
     } catch (error) {
       console.debug("Atmospore pollen request unavailable.", error);
