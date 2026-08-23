@@ -248,7 +248,13 @@ async function sendTest(request, env, origin) {
       url: "./"
     }, env);
     return json({ ok: true }, 200, origin);
-  } catch {
+  } catch (error) {
+    console.warn("Web Push test delivery failed.", {
+      name: error instanceof Error ? error.name : "Error",
+      message: error instanceof Error ? error.message : String(error),
+      status: Number(error?.statusCode || error?.status || 0) || null,
+      responseBody: typeof error?.body === "string" ? error.body.slice(0, 1000) : null
+    });
     return json({ ok: false, error: "Unable to send test notification." }, 502, origin);
   }
 }
