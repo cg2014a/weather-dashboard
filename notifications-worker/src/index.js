@@ -144,7 +144,7 @@ function weatherSummary(forecast, hourly, alerts) {
   return {
     title: "SkyStation Morning Weather",
     body: [`${temperature} • High ${high} / Low ${low}`, weatherLine, alert || ""].filter(Boolean).join("\n"),
-    url: "./"
+    url: "https://cg2014a.github.io/weather-dashboard/"
   };
 }
 
@@ -245,7 +245,7 @@ async function sendTest(request, env, origin) {
     await sendToRecord(record, {
       title: "SkyStation Test",
       body: "Notifications are working. Your morning weather report will arrive at 6:00 AM.",
-      url: "./"
+      url: "https://cg2014a.github.io/weather-dashboard/"
     }, env);
     return json({ ok: true }, 200, origin);
   } catch (error) {

@@ -2661,7 +2661,11 @@ async function notificationApi(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload?.ok === false) throw new Error(payload?.error || "Notification service unavailable.");
+  if (!response.ok || payload?.ok === false) {
+    const error = new Error(payload?.error || "Notification service unavailable.");
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }
 
@@ -2795,7 +2799,9 @@ async function sendTestNotification() {
     setMorningNotificationStatus("Test notification sent.");
   } catch (error) {
     console.warn("Test notification failed.", error);
-    setMorningNotificationStatus("Unable to send test notification.");
+    setMorningNotificationStatus(error?.status === 429
+      ? "Please wait a minute before sending another test."
+      : "Unable to send test notification.");
   }
   syncMorningNotificationControls();
 }

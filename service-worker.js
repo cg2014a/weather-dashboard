@@ -81,16 +81,16 @@ self.addEventListener("push", (event) => {
     badge: "icons/app-icon.svg",
     tag: "skystation-morning-weather",
     renotify: false,
-    data: { url: typeof payload.url === "string" ? payload.url : "./" }
+    data: { url: typeof payload.url === "string" ? payload.url : "https://cg2014a.github.io/weather-dashboard/" }
   }));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil((async () => {
-    const targetUrl = new URL(event.notification.data?.url || "./", self.location.origin).href;
+    const targetUrl = "https://cg2014a.github.io/weather-dashboard/";
     const windows = await clients.matchAll({ type: "window", includeUncontrolled: true });
-    const existing = windows.find((client) => new URL(client.url).origin === self.location.origin);
+    const existing = windows.find((client) => client.url.startsWith(targetUrl));
     if (existing) return existing.focus();
     return clients.openWindow(targetUrl);
   })());
