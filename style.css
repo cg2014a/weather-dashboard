@@ -381,6 +381,11 @@ body.pollen-open { overflow: hidden; }
 .location-toggle input:checked + .toggle-track { background: var(--blue); }
 .location-toggle input:checked + .toggle-track::after { transform: translateX(18px); }
 .location-toggle input:focus-visible + .toggle-track { outline: 2px solid rgba(26, 115, 232, .35); outline-offset: 2px; }
+.notification-test-control { display: grid; gap: 6px; margin: -7px 2px 14px; }
+.notification-test-control[hidden] { display: none; }
+.notification-test-control button { justify-self: start; min-height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: #eef3f8; color: var(--text); font: inherit; font-size: .76rem; font-weight: 800; cursor: pointer; }
+.notification-test-control button:disabled { opacity: .55; cursor: default; }
+.notification-status { min-height: 16px; margin: 0; color: var(--muted); font-size: .72rem; font-weight: 650; line-height: 1.25; }
 .location-entry { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .location-entry input { min-width: 0; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; font: inherit; }
 .location-entry button { height: 42px; padding: 0 14px; background: var(--blue); color: white; }

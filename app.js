@@ -3,8 +3,10 @@ const DEFAULT_LOCATION = { label: "Olathe, KS", query: "Olathe, KS", city: "Olat
 const LOCATION_STORAGE_KEY = "skystation-location";
 const AUTO_LOCATION_STORAGE_KEY = "skystation-auto-location";
 const DAILY_LAYOUT_STORAGE_KEY = "skystation-daily-layout";
+const MORNING_NOTIFICATION_STORAGE_KEY = "skystation-morning-notification";
 const AIRNOW_KEY_STORAGE_KEY = "skystation-airnow-key";
 const PRESSURE_HISTORY_STORAGE_KEY = "skystation-pressure-history";
+const NOTIFICATION_WORKER_URL = "https://skystation-notifications.cgarrett4.workers.dev";
 const PRECIP_DISPLAY_THRESHOLD = 20;
 const MAX_NEARBY_PRECIP_STATION_MILES = 10;
 const nwsPointUrl = ({ lat, lon }) => `https://api.weather.gov/points/${lat},${lon}`;
@@ -2545,6 +2547,7 @@ const formatTemp = (value) => {
 const iconSrc = (icon) => `${ICON_PATH}${icon}`;
 let currentLocation = loadSavedLocation();
 let autoLocationEnabled = loadAutoLocationEnabled();
+let morningNotificationPreference = loadMorningNotificationPreference();
 let currentPollenDetails = [];
 let currentHealthDetails = [];
 let currentPollenNote = "";
@@ -2591,6 +2594,210 @@ function loadDailyLayoutMode() {
 function saveDailyLayoutMode(value) {
   dailyLayoutMode = value === "horizontal" ? "horizontal" : "vertical";
   localStorage.setItem(DAILY_LAYOUT_STORAGE_KEY, dailyLayoutMode);
+}
+
+function loadMorningNotificationPreference() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MORNING_NOTIFICATION_STORAGE_KEY) || "{}");
+    if (!saved || typeof saved !== "object") return { enabled: false, installationId: "", managementToken: "", subscriptionActive: false };
+    return {
+      enabled: saved.enabled === true,
+      installationId: typeof saved.installationId === "string" ? saved.installationId : "",
+      managementToken: typeof saved.managementToken === "string" ? saved.managementToken : "",
+      subscriptionActive: saved.subscriptionActive === true
+    };
+  } catch {
+    return { enabled: false, installationId: "", managementToken: "", subscriptionActive: false };
+  }
+}
+
+function saveMorningNotificationPreference(next) {
+  morningNotificationPreference = {
+    ...morningNotificationPreference,
+    ...next,
+    enabled: next?.enabled === true,
+    subscriptionActive: next?.subscriptionActive === true
+  };
+  localStorage.setItem(MORNING_NOTIFICATION_STORAGE_KEY, JSON.stringify(morningNotificationPreference));
+}
+
+function randomDeviceValue() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function ensureMorningNotificationIdentity() {
+  if (!morningNotificationPreference.installationId || !morningNotificationPreference.managementToken) {
+    saveMorningNotificationPreference({
+      ...morningNotificationPreference,
+      installationId: randomDeviceValue(),
+      managementToken: randomDeviceValue(),
+      enabled: morningNotificationPreference.enabled,
+      subscriptionActive: morningNotificationPreference.subscriptionActive
+    });
+  }
+  return morningNotificationPreference;
+}
+
+function pushNotificationsSupported() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && "crypto" in window;
+}
+
+function urlBase64ToUint8Array(value) {
+  const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const raw = atob(padded);
+  return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+}
+
+async function notificationApi(path, options = {}) {
+  const response = await fetch(`${NOTIFICATION_WORKER_URL}${path}`, {
+    method: options.method || "GET",
+    headers: {
+      Accept: "application/json",
+      ...(options.body ? { "Content-Type": "application/json" } : {})
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok === false) throw new Error(payload?.error || "Notification service unavailable.");
+  return payload;
+}
+
+function setMorningNotificationStatus(message) {
+  if (elements.morningNotificationStatus) elements.morningNotificationStatus.textContent = message;
+}
+
+function syncMorningNotificationControls() {
+  const enabled = morningNotificationPreference.enabled === true;
+  const permissionGranted = typeof Notification !== "undefined" && Notification.permission === "granted";
+  const canTest = enabled && permissionGranted && morningNotificationPreference.subscriptionActive === true;
+  if (elements.morningNotificationToggle) elements.morningNotificationToggle.checked = enabled;
+  if (elements.notificationTestControl) elements.notificationTestControl.hidden = !canTest;
+  if (elements.sendTestNotification) elements.sendTestNotification.disabled = !canTest;
+}
+
+async function refreshMorningNotificationState() {
+  if (!pushNotificationsSupported()) {
+    if (morningNotificationPreference.enabled) saveMorningNotificationPreference({ ...morningNotificationPreference, enabled: false, subscriptionActive: false });
+    syncMorningNotificationControls();
+    return false;
+  }
+  if (Notification.permission !== "granted") {
+    if (morningNotificationPreference.enabled) saveMorningNotificationPreference({ ...morningNotificationPreference, enabled: false, subscriptionActive: false });
+    syncMorningNotificationControls();
+    return false;
+  }
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    const active = Boolean(subscription);
+    if (morningNotificationPreference.enabled !== active || morningNotificationPreference.subscriptionActive !== active) {
+      saveMorningNotificationPreference({ ...morningNotificationPreference, enabled: active, subscriptionActive: active });
+    }
+    syncMorningNotificationControls();
+    return active;
+  } catch {
+    syncMorningNotificationControls();
+    return false;
+  }
+}
+
+async function enableMorningNotifications() {
+  if (!pushNotificationsSupported()) {
+    setMorningNotificationStatus("Notifications are not supported on this device.");
+    saveMorningNotificationPreference({ ...morningNotificationPreference, enabled: false, subscriptionActive: false });
+    syncMorningNotificationControls();
+    return;
+  }
+
+  setMorningNotificationStatus("Enabling notifications...");
+  let createdSubscription = false;
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("Notification permission was not granted.");
+    const config = await notificationApi("/api/notifications/config");
+    if (!config?.vapidPublicKey) throw new Error("Notification configuration is unavailable.");
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(config.vapidPublicKey)
+      });
+      createdSubscription = true;
+    }
+    const identity = ensureMorningNotificationIdentity();
+    const location = await locationForDashboard();
+    await notificationApi("/api/notifications/subscribe", {
+      method: "POST",
+      body: {
+        installationId: identity.installationId,
+        managementToken: identity.managementToken,
+        subscription: subscription.toJSON(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago",
+        location: { lat: Number(location.lat), lon: Number(location.lon) }
+      }
+    });
+    saveMorningNotificationPreference({ ...identity, enabled: true, subscriptionActive: true });
+    setMorningNotificationStatus("Morning notifications are on.");
+  } catch (error) {
+    console.warn("Morning notification setup failed.", error);
+    if (createdSubscription) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        await subscription?.unsubscribe();
+      } catch {}
+    }
+    saveMorningNotificationPreference({ ...morningNotificationPreference, enabled: false, subscriptionActive: false });
+    setMorningNotificationStatus("Unable to enable notifications.");
+  }
+  syncMorningNotificationControls();
+}
+
+async function disableMorningNotifications() {
+  setMorningNotificationStatus("Turning notifications off...");
+  try {
+    const identity = ensureMorningNotificationIdentity();
+    await notificationApi("/api/notifications/unsubscribe", {
+      method: "POST",
+      body: { installationId: identity.installationId, managementToken: identity.managementToken }
+    });
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    await subscription?.unsubscribe();
+    saveMorningNotificationPreference({ ...identity, enabled: false, subscriptionActive: false });
+    setMorningNotificationStatus("Morning notifications are off.");
+  } catch (error) {
+    console.warn("Morning notification removal failed.", error);
+    setMorningNotificationStatus("Unable to turn off notifications.");
+  }
+  syncMorningNotificationControls();
+}
+
+async function handleMorningNotificationToggle() {
+  if (elements.morningNotificationToggle?.checked) await enableMorningNotifications();
+  else await disableMorningNotifications();
+}
+
+async function sendTestNotification() {
+  if (!morningNotificationPreference.enabled || !morningNotificationPreference.subscriptionActive) return;
+  setMorningNotificationStatus("Sending test...");
+  if (elements.sendTestNotification) elements.sendTestNotification.disabled = true;
+  try {
+    const identity = ensureMorningNotificationIdentity();
+    await notificationApi("/api/notifications/test", {
+      method: "POST",
+      body: { installationId: identity.installationId, managementToken: identity.managementToken }
+    });
+    setMorningNotificationStatus("Test notification sent.");
+  } catch (error) {
+    console.warn("Test notification failed.", error);
+    setMorningNotificationStatus("Unable to send test notification.");
+  }
+  syncMorningNotificationControls();
 }
 
 function isValidLocation(location) {
@@ -2661,7 +2868,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "morningNotificationToggle", "notificationTestControl", "sendTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
@@ -3596,6 +3803,7 @@ function toggleSettings(force) {
   if (shouldOpen) {
     if (elements.autoLocationToggle) elements.autoLocationToggle.checked = autoLocationEnabled;
     if (elements.dailyLayoutToggle) elements.dailyLayoutToggle.checked = dailyLayoutMode === "horizontal";
+    refreshMorningNotificationState();
     elements.locationInput.value = currentLocation.query || currentLocation.label;
     elements.locationStatus.textContent = "";
     elements.locationInput.focus();
@@ -3667,6 +3875,8 @@ function bindInteractions() {
       ? "7-Day Forecast is using the horizontal chart view."
       : "7-Day Forecast is using the vertical list view.";
   });
+  elements.morningNotificationToggle.addEventListener("change", handleMorningNotificationToggle);
+  elements.sendTestNotification.addEventListener("click", sendTestNotification);
   elements.locationForm.addEventListener("submit", handleLocationSubmit);
   bindPullToRefresh();
 }
@@ -3781,6 +3991,7 @@ function startApp() {
   updateClock();
   renderDashboard();
   registerServiceWorker();
+  refreshMorningNotificationState();
   window.setInterval(updateClock, 30000);
 }
 

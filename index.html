@@ -154,6 +154,18 @@
           <input id="dailyLayoutToggle" type="checkbox" />
           <span class="toggle-track" aria-hidden="true"></span>
         </label>
+        <label class="location-toggle">
+          <span>
+            <strong>Morning Weather Notification</strong>
+            <small>Get a daily SkyStation weather summary at 6:00 AM.</small>
+          </span>
+          <input id="morningNotificationToggle" type="checkbox" />
+          <span class="toggle-track" aria-hidden="true"></span>
+        </label>
+        <div class="notification-test-control" id="notificationTestControl" hidden>
+          <button id="sendTestNotification" type="button" disabled>Send Test Notification</button>
+          <p id="morningNotificationStatus" class="notification-status" role="status"></p>
+        </div>
         <label for="locationInput">ZIP or City, State</label>
         <div class="location-entry">
           <input id="locationInput" name="location" type="text" autocomplete="postal-code" placeholder="66062 or Kansas City, MO" />

@@ -1,4 +1,4 @@
-const CACHE_NAME = "skystation-v1-164";
+const CACHE_NAME = "skystation-v1-165";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -64,6 +64,36 @@ self.addEventListener("fetch", (event) => {
         return Response.error();
       }))
   );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data?.json() || {};
+  } catch {
+    payload = { body: event.data?.text?.() || "Your SkyStation weather update is ready." };
+  }
+  const title = typeof payload.title === "string" && payload.title ? payload.title : "SkyStation Morning Weather";
+  const body = typeof payload.body === "string" && payload.body ? payload.body : "Your SkyStation weather update is ready.";
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    icon: "icons/app-icon.svg",
+    badge: "icons/app-icon.svg",
+    tag: "skystation-morning-weather",
+    renotify: false,
+    data: { url: typeof payload.url === "string" ? payload.url : "./" }
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const targetUrl = new URL(event.notification.data?.url || "./", self.location.origin).href;
+    const windows = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    const existing = windows.find((client) => new URL(client.url).origin === self.location.origin);
+    if (existing) return existing.focus();
+    return clients.openWindow(targetUrl);
+  })());
 });
 
 
