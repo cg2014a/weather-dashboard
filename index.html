@@ -20,7 +20,7 @@
       <section class="weather-shell">
         <p class="app-kicker">
           SkyStation Weather <span>- <span id="locationLabel">Olathe, KS</span></span> <time id="appClock">--:--</time>
-          <button class="settings-button" id="settingsToggle" type="button" aria-label="Change location">
+          <button class="settings-button" id="settingsToggle" type="button" aria-label="Settings">
             <img src="icons/nav-settings.svg" alt="" />
           </button>
         </p>
@@ -129,49 +129,62 @@
           <div class="pollen-list" id="pollenList"></div>
           <p class="pollen-attribution">Pollen data by <a href="https://atmospore.com/" target="_blank" rel="noopener noreferrer">Atmospore</a></p>
         </section>
-<footer class="source-footer">Weather source: NWS · Fallbacks: EPA/AirNow/Open-Meteo · Allergy: Atmospore / SkyStation · Radar: Windy · Version v1-165</footer>
+<footer class="source-footer">Version v1-165</footer>
       </section>
     </main>
-    <section class="settings-panel" id="settingsPanel" aria-label="Location settings" hidden>
+    <section class="settings-panel" id="settingsPanel" aria-label="Settings" hidden>
       <form class="settings-card" id="locationForm">
         <div class="settings-heading">
-          <h2>Change Location</h2>
+          <h2>Settings</h2>
           <button id="settingsClose" type="button" aria-label="Close settings">Close</button>
         </div>
-        <label class="location-toggle">
-          <span>
-            <strong>Use Current Location</strong>
-            <small>Automatically detect this device when the dashboard loads or refreshes.</small>
-          </span>
-          <input id="autoLocationToggle" type="checkbox" checked />
-          <span class="toggle-track" aria-hidden="true"></span>
-        </label>
-        <label class="location-toggle">
-          <span>
-            <strong>Horizontal 7-Day Forecast</strong>
-            <small>Switch the 7-day forecast from the standard vertical list to a compact chart view.</small>
-          </span>
-          <input id="dailyLayoutToggle" type="checkbox" />
-          <span class="toggle-track" aria-hidden="true"></span>
-        </label>
-        <label class="location-toggle">
-          <span>
-            <strong>Morning Weather Notification</strong>
-            <small>Get a daily SkyStation weather summary at 6:00 AM.</small>
-          </span>
-          <input id="morningNotificationToggle" type="checkbox" />
-          <span class="toggle-track" aria-hidden="true"></span>
-        </label>
-        <div class="notification-test-control" id="notificationTestControl" hidden>
-          <button id="sendTestNotification" type="button" disabled>Send Test Notification</button>
-          <p id="morningNotificationStatus" class="notification-status" role="status"></p>
-        </div>
-        <label for="locationInput">ZIP or City, State</label>
-        <div class="location-entry">
-          <input id="locationInput" name="location" type="text" autocomplete="postal-code" placeholder="66062 or Kansas City, MO" />
-          <button type="submit">Update</button>
-        </div>
-        <p id="locationStatus" class="location-status" role="status"></p>
+        <section class="settings-group" aria-labelledby="changeLocationHeading">
+          <h3 id="changeLocationHeading">Change Location</h3>
+          <label class="location-toggle">
+            <span>
+              <strong>Use Current Location</strong>
+              <small>Automatically detect this device when the dashboard loads or refreshes.</small>
+            </span>
+            <input id="autoLocationToggle" type="checkbox" checked />
+            <span class="toggle-track" aria-hidden="true"></span>
+          </label>
+          <label for="locationInput">ZIP or City, State</label>
+          <div class="location-entry">
+            <input id="locationInput" name="location" type="text" autocomplete="postal-code" placeholder="66062 or Kansas City, MO" />
+            <button type="submit">Update</button>
+          </div>
+          <p id="locationStatus" class="location-status" role="status"></p>
+        </section>
+        <section class="settings-group" aria-labelledby="dashboardSettingsHeading">
+          <h3 id="dashboardSettingsHeading">Dashboard</h3>
+          <label class="location-toggle">
+            <span>
+              <strong>Horizontal 7-Day Forecast</strong>
+              <small>Switch the 7-day forecast from the standard vertical list to a compact chart view.</small>
+            </span>
+            <input id="dailyLayoutToggle" type="checkbox" />
+            <span class="toggle-track" aria-hidden="true"></span>
+          </label>
+        </section>
+        <section class="settings-group" aria-labelledby="notificationSettingsHeading">
+          <h3 id="notificationSettingsHeading">Notifications</h3>
+          <label class="location-toggle">
+            <span>
+              <strong>Morning Weather Notification</strong>
+              <small>Get a daily SkyStation weather summary at 6:00 AM.</small>
+            </span>
+            <input id="morningNotificationToggle" type="checkbox" />
+            <span class="toggle-track" aria-hidden="true"></span>
+          </label>
+          <div class="notification-test-control" id="notificationTestControl" hidden>
+            <button id="sendTestNotification" type="button" disabled>Send Test Notification</button>
+            <p id="morningNotificationStatus" class="notification-status" role="status"></p>
+          </div>
+        </section>
+        <section class="settings-group settings-sources" aria-labelledby="dataSourcesHeading">
+          <h3 id="dataSourcesHeading">Data Sources</h3>
+          <p>Weather: NWS · Fallbacks: EPA/AirNow/Open-Meteo · Allergy: Atmospore / SkyStation · Radar: Windy</p>
+        </section>
       </form>
     </section>
     <script src="atmospore-client.js"></script>
