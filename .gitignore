@@ -1,1 +1,10 @@
 notifications-worker/node_modules/
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+.wrangler/
+*.pem
+*.key
+*.p12
+*.pfx

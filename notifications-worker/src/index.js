@@ -271,7 +271,7 @@ async function processDueNotifications(env) {
       UPDATE push_subscriptions SET delivery_lock_until = ?1, updated_at = ?2
       WHERE id = ?3 AND enabled = 1 AND next_delivery_at <= ?2 AND delivery_lock_until <= ?2
     `).bind(now + DELIVERY_LOCK_MS, now, record.id).run();
-    if (!claimed.meta.changed_db_rows) return;
+    if (!claimed.meta.changes) return;
     try {
       const payload = await buildMorningPayload(record, env);
       await sendToRecord(record, payload, env);
