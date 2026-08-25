@@ -313,6 +313,22 @@ async function sendSevereAlertTest(request, env, origin) {
   }
 }
 
+async function activeTestRecord(request, env, origin) {
+  const body = await readJson(request);
+  if (!validIdentity(body?.installationId) || !validIdentity(body?.managementToken)) {
+    return { error: json({ ok: false, error: "Invalid device." }, 400, origin) };
+  }
+  const tokenHash = await hash(body.managementToken);
+  const record = await env.NOTIFICATIONS_DB.prepare(`
+    SELECT * FROM push_subscriptions
+    WHERE installation_id = ?1 AND management_token_hash = ?2 AND enabled = 1 AND severe_alerts_enabled = 1
+    LIMIT 1
+  `).bind(body.installationId, tokenHash).first();
+  return record
+    ? { record }
+    : { error: json({ ok: false, error: "Severe weather alerts are not enabled." }, 404, origin) };
+}
+
 async function processDueNotifications(env) {
   const now = Date.now();
   const due = await env.NOTIFICATIONS_DB.prepare(`
@@ -399,6 +415,46 @@ function severeAlertPayload(alert, timezone) {
   };
 }
 
+async function findActiveRemoteTestAlert(record, env, now) {
+  const localPayload = await fetchJson(`https://api.weather.gov/alerts/active?point=${record.latitude},${record.longitude}`, env);
+  const localAlertIds = new Set(qualifyingAlerts(localPayload, now).map((alert) => alert.alertId));
+  for (const event of SEVERE_ALERT_EVENTS) {
+    try {
+      const payload = await fetchJson(`https://api.weather.gov/alerts/active?status=actual&event=${encodeURIComponent(event)}`, env);
+      const alert = qualifyingAlerts(payload, now).find((item) => !localAlertIds.has(item.alertId));
+      if (alert) return alert;
+    } catch {
+      // Try the remaining supported NWS event types without exposing request details.
+    }
+  }
+  return null;
+}
+
+async function sendActiveNwsAlertTest(request, env, origin) {
+  const active = await activeTestRecord(request, env, origin);
+  if (active.error) return active.error;
+  const now = Date.now();
+  const alert = await findActiveRemoteTestAlert(active.record, env, now).catch(() => null);
+  if (!alert) return json({ ok: false, error: "No active supported NWS alert is available for testing." }, 404, origin);
+  const claim = await env.NOTIFICATIONS_DB.prepare(`
+    UPDATE push_subscriptions SET test_cooldown_until = ?1, updated_at = ?2
+    WHERE id = ?3 AND test_cooldown_until <= ?2
+  `).bind(now + TEST_COOLDOWN_MS, now, active.record.id).run();
+  if (!claim.meta.changes) return json({ ok: false, error: "Please wait before sending another test." }, 429, origin);
+  try {
+    const payload = severeAlertPayload(alert, active.record.timezone);
+    await sendToRecord(active.record, { ...payload, title: `TEST — ${payload.title}` }, env);
+    return json({ ok: true }, 200, origin);
+  } catch (error) {
+    console.warn("Active NWS alert test delivery failed.", {
+      name: error instanceof Error ? error.name : "Error",
+      message: error instanceof Error ? error.message : String(error),
+      status: Number(error?.statusCode || error?.status || 0) || null
+    });
+    return json({ ok: false, error: "Unable to send active NWS alert test." }, 502, origin);
+  }
+}
+
 async function claimSevereAlert(record, alert, contentHash, now, env) {
   const result = await env.NOTIFICATIONS_DB.prepare(`
     INSERT INTO severe_alert_notifications (subscription_id, alert_id, content_hash, expires_at, notified_at)
@@ -468,6 +524,7 @@ export default {
     if (request.method === "POST" && url.pathname === "/api/notifications/unsubscribe") return unsubscribe(request, env, allowed.origin);
     if (request.method === "POST" && url.pathname === "/api/notifications/test") return sendTest(request, env, allowed.origin);
     if (request.method === "POST" && url.pathname === "/api/notifications/severe-alerts/test") return sendSevereAlertTest(request, env, allowed.origin);
+    if (request.method === "POST" && url.pathname === "/api/notifications/severe-alerts/active-test") return sendActiveNwsAlertTest(request, env, allowed.origin);
     return json({ ok: false, error: "Not found." }, 404, allowed.origin);
   },
 

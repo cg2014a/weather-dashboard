@@ -2689,6 +2689,7 @@ function syncMorningNotificationControls() {
   if (elements.severeAlertTestControl) elements.severeAlertTestControl.hidden = !(canTest && morningNotificationPreference.severeAlertsEnabled);
   if (elements.sendTestNotification) elements.sendTestNotification.disabled = !(canTest && morningNotificationPreference.morningEnabled);
   if (elements.sendSevereAlertTestNotification) elements.sendSevereAlertTestNotification.disabled = !(canTest && morningNotificationPreference.severeAlertsEnabled);
+  if (elements.sendActiveNwsAlertTestNotification) elements.sendActiveNwsAlertTestNotification.disabled = !(canTest && morningNotificationPreference.severeAlertsEnabled);
 }
 
 async function refreshMorningNotificationState() {
@@ -2844,6 +2845,28 @@ async function sendSevereAlertTestNotification() {
   syncMorningNotificationControls();
 }
 
+async function sendActiveNwsAlertTestNotification() {
+  if (!morningNotificationPreference.severeAlertsEnabled || !morningNotificationPreference.subscriptionActive) return;
+  setMorningNotificationStatus("Finding an active NWS alert...");
+  if (elements.sendActiveNwsAlertTestNotification) elements.sendActiveNwsAlertTestNotification.disabled = true;
+  try {
+    const identity = ensureMorningNotificationIdentity();
+    await notificationApi("/api/notifications/severe-alerts/active-test", {
+      method: "POST",
+      body: { installationId: identity.installationId, managementToken: identity.managementToken }
+    });
+    setMorningNotificationStatus("Active NWS alert test sent.");
+  } catch (error) {
+    console.warn("Active NWS alert test failed.", error);
+    setMorningNotificationStatus(error?.status === 404
+      ? "No active supported NWS alert is available for testing."
+      : error?.status === 429
+        ? "Please wait a minute before sending another test."
+        : "Unable to send active NWS alert test.");
+  }
+  syncMorningNotificationControls();
+}
+
 function isValidLocation(location) {
   if (!location || typeof location !== "object") return false;
   if (!String(location.label || "").trim()) return false;
@@ -2912,7 +2935,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "morningNotificationToggle", "severeAlertsToggle", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendSevereAlertTestNotification", "morningNotificationStatus",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "morningNotificationToggle", "severeAlertsToggle", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendSevereAlertTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
@@ -3922,6 +3945,7 @@ function bindInteractions() {
   elements.severeAlertsToggle.addEventListener("change", handleSevereAlertsToggle);
   elements.sendTestNotification.addEventListener("click", sendTestNotification);
   elements.sendSevereAlertTestNotification.addEventListener("click", sendSevereAlertTestNotification);
+  elements.sendActiveNwsAlertTestNotification.addEventListener("click", sendActiveNwsAlertTestNotification);
   elements.locationForm.addEventListener("submit", handleLocationSubmit);
   bindPullToRefresh();
 }
