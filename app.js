@@ -2685,10 +2685,10 @@ function syncMorningNotificationControls() {
   const canTest = permissionGranted && morningNotificationPreference.subscriptionActive === true;
   if (elements.morningNotificationToggle) elements.morningNotificationToggle.checked = morningNotificationPreference.morningEnabled === true;
   if (elements.severeAlertsToggle) elements.severeAlertsToggle.checked = morningNotificationPreference.severeAlertsEnabled === true;
+  if (elements.notificationAdvanced) elements.notificationAdvanced.hidden = !(canTest && notificationsEnabled());
   if (elements.notificationTestControl) elements.notificationTestControl.hidden = !(canTest && morningNotificationPreference.morningEnabled);
   if (elements.severeAlertTestControl) elements.severeAlertTestControl.hidden = !(canTest && morningNotificationPreference.severeAlertsEnabled);
   if (elements.sendTestNotification) elements.sendTestNotification.disabled = !(canTest && morningNotificationPreference.morningEnabled);
-  if (elements.sendSevereAlertTestNotification) elements.sendSevereAlertTestNotification.disabled = !(canTest && morningNotificationPreference.severeAlertsEnabled);
   if (elements.sendActiveNwsAlertTestNotification) elements.sendActiveNwsAlertTestNotification.disabled = !(canTest && morningNotificationPreference.severeAlertsEnabled);
 }
 
@@ -2825,26 +2825,6 @@ async function sendTestNotification() {
   syncMorningNotificationControls();
 }
 
-async function sendSevereAlertTestNotification() {
-  if (!morningNotificationPreference.severeAlertsEnabled || !morningNotificationPreference.subscriptionActive) return;
-  setMorningNotificationStatus("Sending severe alert test...");
-  if (elements.sendSevereAlertTestNotification) elements.sendSevereAlertTestNotification.disabled = true;
-  try {
-    const identity = ensureMorningNotificationIdentity();
-    await notificationApi("/api/notifications/severe-alerts/test", {
-      method: "POST",
-      body: { installationId: identity.installationId, managementToken: identity.managementToken }
-    });
-    setMorningNotificationStatus("Severe alert test sent.");
-  } catch (error) {
-    console.warn("Severe alert test failed.", error);
-    setMorningNotificationStatus(error?.status === 429
-      ? "Please wait a minute before sending another test."
-      : "Unable to send severe alert test.");
-  }
-  syncMorningNotificationControls();
-}
-
 async function sendActiveNwsAlertTestNotification() {
   if (!morningNotificationPreference.severeAlertsEnabled || !morningNotificationPreference.subscriptionActive) return;
   setMorningNotificationStatus("Finding an active NWS alert...");
@@ -2935,7 +2915,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "morningNotificationToggle", "severeAlertsToggle", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendSevereAlertTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
@@ -3944,7 +3924,6 @@ function bindInteractions() {
   elements.morningNotificationToggle.addEventListener("change", handleMorningNotificationToggle);
   elements.severeAlertsToggle.addEventListener("change", handleSevereAlertsToggle);
   elements.sendTestNotification.addEventListener("click", sendTestNotification);
-  elements.sendSevereAlertTestNotification.addEventListener("click", sendSevereAlertTestNotification);
   elements.sendActiveNwsAlertTestNotification.addEventListener("click", sendActiveNwsAlertTestNotification);
   elements.locationForm.addEventListener("submit", handleLocationSubmit);
   bindPullToRefresh();

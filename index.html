@@ -184,13 +184,15 @@
             <input id="severeAlertsToggle" type="checkbox" />
             <span class="toggle-track" aria-hidden="true"></span>
           </label>
-          <div class="notification-test-control" id="notificationTestControl" hidden>
-            <button id="sendTestNotification" type="button" disabled>Send Morning Test Notification</button>
-          </div>
-          <div class="notification-test-control" id="severeAlertTestControl" hidden>
-            <button id="sendSevereAlertTestNotification" type="button" disabled>Send Severe Alert Test</button>
-            <button id="sendActiveNwsAlertTestNotification" type="button" disabled>Send Active NWS Alert Test</button>
-          </div>
+          <details class="notification-advanced" id="notificationAdvanced" hidden>
+            <summary>Advanced</summary>
+            <div class="notification-test-control" id="notificationTestControl" hidden>
+              <button id="sendTestNotification" type="button" disabled>Send Morning Test Notification</button>
+            </div>
+            <div class="notification-test-control" id="severeAlertTestControl" hidden>
+              <button id="sendActiveNwsAlertTestNotification" type="button" disabled>Send Active NWS Alert Test</button>
+            </div>
+          </details>
           <p id="morningNotificationStatus" class="notification-status" role="status"></p>
         </section>
         <section class="settings-group settings-sources" aria-labelledby="dataSourcesHeading">

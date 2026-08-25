@@ -279,40 +279,6 @@ async function sendTest(request, env, origin) {
   }
 }
 
-async function sendSevereAlertTest(request, env, origin) {
-  const body = await readJson(request);
-  if (!validIdentity(body?.installationId) || !validIdentity(body?.managementToken)) return json({ ok: false, error: "Invalid device." }, 400, origin);
-  const now = Date.now();
-  const tokenHash = await hash(body.managementToken);
-  const record = await env.NOTIFICATIONS_DB.prepare(`
-    SELECT * FROM push_subscriptions
-    WHERE installation_id = ?1 AND management_token_hash = ?2 AND enabled = 1 AND severe_alerts_enabled = 1
-    LIMIT 1
-  `).bind(body.installationId, tokenHash).first();
-  if (!record) return json({ ok: false, error: "Severe weather alerts are not enabled." }, 404, origin);
-  const claim = await env.NOTIFICATIONS_DB.prepare(`
-    UPDATE push_subscriptions SET test_cooldown_until = ?1, updated_at = ?2
-    WHERE id = ?3 AND test_cooldown_until <= ?2
-  `).bind(now + TEST_COOLDOWN_MS, now, record.id).run();
-  if (!claim.meta.changes) return json({ ok: false, error: "Please wait before sending another test." }, 429, origin);
-  try {
-    await sendToRecord(record, {
-      title: "SkyStation Severe Alert Test",
-      body: "This is a test of SkyStation severe weather alerts.",
-      url: "https://cg2014a.github.io/weather-dashboard/"
-    }, env);
-    return json({ ok: true }, 200, origin);
-  } catch (error) {
-    console.warn("Web Push severe alert test delivery failed.", {
-      name: error instanceof Error ? error.name : "Error",
-      message: error instanceof Error ? error.message : String(error),
-      status: Number(error?.statusCode || error?.status || 0) || null,
-      responseBody: typeof error?.body === "string" ? error.body.slice(0, 1000) : null
-    });
-    return json({ ok: false, error: "Unable to send severe alert test." }, 502, origin);
-  }
-}
-
 async function activeTestRecord(request, env, origin) {
   const body = await readJson(request);
   if (!validIdentity(body?.installationId) || !validIdentity(body?.managementToken)) {
@@ -523,7 +489,6 @@ export default {
     if (request.method === "POST" && url.pathname === "/api/notifications/subscribe") return subscribe(request, env, allowed.origin);
     if (request.method === "POST" && url.pathname === "/api/notifications/unsubscribe") return unsubscribe(request, env, allowed.origin);
     if (request.method === "POST" && url.pathname === "/api/notifications/test") return sendTest(request, env, allowed.origin);
-    if (request.method === "POST" && url.pathname === "/api/notifications/severe-alerts/test") return sendSevereAlertTest(request, env, allowed.origin);
     if (request.method === "POST" && url.pathname === "/api/notifications/severe-alerts/active-test") return sendActiveNwsAlertTest(request, env, allowed.origin);
     return json({ ok: false, error: "Not found." }, 404, allowed.origin);
   },
