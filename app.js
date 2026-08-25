@@ -9,6 +9,17 @@ const PRESSURE_HISTORY_STORAGE_KEY = "skystation-pressure-history";
 const NOTIFICATION_WORKER_URL = "https://skystation-notifications.cgarrett4.workers.dev";
 const PRECIP_DISPLAY_THRESHOLD = 20;
 const MAX_NEARBY_PRECIP_STATION_MILES = 10;
+// SkyStation forecast-impact heuristics. These are not official NWS warning thresholds.
+const FORECAST_HAZARD_THRESHOLDS = Object.freeze({
+  windGustImpactMph: 40,
+  windGustAlertMph: 58,
+  rainfallImpactInches: 1.5,
+  rainfallAlertInches: 3,
+  rainfallAlertWithHeavySignalInches: 2,
+  rainfallAlertPrecipChance: 80,
+  snowImpactInches: 3,
+  snowAlertInches: 8
+});
 const nwsPointUrl = ({ lat, lon }) => `https://api.weather.gov/points/${lat},${lon}`;
 const nwsAlertsUrl = ({ lat, lon }) => `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
 const spcOutlookUrl = (layerId, { lat, lon }) => {
@@ -26,7 +37,7 @@ const spcOutlookUrl = (layerId, { lat, lon }) => {
   return `https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/FeatureServer/${layerId}/query?${params}`;
 };
 const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi&hourly=us_aqi&timezone=auto&forecast_days=7`;
-const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,rain,showers,snowfall,visibility,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&minutely_15=precipitation_probability,precipitation,rain,showers,snowfall&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=168`;
+const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,rain,showers,snowfall,visibility,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&minutely_15=precipitation_probability,precipitation,rain,showers,snowfall&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&snowfall_unit=inch&timezone=auto&forecast_days=7&forecast_hours=168`;
 const epaUvUrl = (location) => location.zip
   ? `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/ZIP/${location.zip}/JSON`
   : `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/CITY/${encodeURIComponent(location.city || "")}/STATE/${location.state || ""}/JSON`;
@@ -138,7 +149,7 @@ class WeatherService {
     };
     const current = this.mapCurrent(currentPeriod, dailyPeriods, hourlyPeriods, observation, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental, observation);
-    const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, enrichedSupplemental);
+    const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, enrichedSupplemental, spcOutlooksPromise);
     const dailyOutlookPromise = spcOutlooksPromise
       .then((spcOutlooks) => this.mapDaily(dailyPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
       .catch((error) => {
@@ -187,7 +198,7 @@ class WeatherService {
     };
     const current = this.mapCurrent(currentPeriod, forecastPeriods, hourlyPeriods, null, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental, null);
-    const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, forecastPeriods, null, precipitation, enrichedSupplemental);
+    const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, forecastPeriods, null, precipitation, enrichedSupplemental, spcOutlooksPromise);
     const dailyOutlookPromise = spcOutlooksPromise
       .then((spcOutlooks) => this.mapDaily(forecastPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
       .catch((error) => {
@@ -412,7 +423,7 @@ class WeatherService {
     };
   }
 
-  async getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, baseSupplemental) {
+  async getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, baseSupplemental, spcOutlooksPromise = null) {
     const startDate = this.firstDailyForecastDate(dailyPeriods);
     const [airQualityResult, atmosporePollenResult] = await Promise.allSettled([
       this.withTimeout(this.getAirQuality(location), 5000, "air quality"),
@@ -420,6 +431,12 @@ class WeatherService {
     ]);
     const airQuality = this.settledValue(airQualityResult);
     const providerPollen = this.settledValue(atmosporePollenResult);
+    const spcOutlooks = spcOutlooksPromise
+      ? await spcOutlooksPromise.catch((error) => {
+        console.warn("SPC outlooks unavailable.", error);
+        return [];
+      })
+      : (baseSupplemental?.spcOutlooks || []);
     const fallbackPollen = baseSupplemental?.pollen || this.getPollenData(location, baseSupplemental, { currentPeriod, dailyPeriods, observation });
     const pollen = this.mergeAtmosporePollen(fallbackPollen, providerPollen);
     const dailyPollenByDate = this.buildDailyPollenByDate(location, dailyPeriods, baseSupplemental, providerPollen, airQuality);
@@ -428,6 +445,7 @@ class WeatherService {
       airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : baseSupplemental.airQualityLabel,
       dailyAirQuality: airQuality?.dailyAirQuality || baseSupplemental.dailyAirQuality || [],
       dailyPollenByDate,
+      spcOutlooks,
       pollen: {
         ...pollen,
         health: this.mapHealthRisks({ ...baseSupplemental, pollen }, airQuality)
@@ -966,6 +984,7 @@ class WeatherService {
         low: this.numberOrNull(daily.temperature_2m_min?.[0]),
         dailyPrecipAmount: this.numberOrNull(daily.precipitation_sum?.[0]),
         dailyPrecipAmounts: (daily.precipitation_sum || []).map((value) => this.numberOrNull(value)),
+        dailySnowfallAmounts: (daily.snowfall_sum || []).map((value) => this.numberOrNull(value)),
         dailyHighs: (daily.temperature_2m_max || []).map((value) => this.numberOrNull(value)),
         dailyLows: (daily.temperature_2m_min || []).map((value) => this.numberOrNull(value)),
         dailyDates: Array.isArray(daily.time) && daily.time.length ? daily.time : dailySupplemental.dates,
@@ -1729,7 +1748,7 @@ class WeatherService {
     const text = `${dayPeriod.detailedForecast || ""} ${nightPeriod?.detailedForecast || ""}`;
     const numericDailyAmount = this.formatInches(this.firstNumber(supplemental?.dailyGridPrecipAmounts?.[supplementalIndex], supplemental?.dailyPrecipAmounts?.[supplementalIndex]));
     const precipAmount = this.showPrecipAmount(numericDailyAmount) ? numericDailyAmount : this.precipAmountFromText(text);
-    const designation = this.dayDesignation(dayPeriod, nightPeriod, text, high, low, supplemental);
+    const designation = this.dayDesignation(dayPeriod, nightPeriod, text, high, low, supplemental, supplementalIndex);
 
     return {
       day: this.dayLabel(dayPeriod.startTime),
@@ -1760,7 +1779,7 @@ class WeatherService {
     const text = period?.detailedForecast || period?.shortForecast || "Tonight forecast is updating.";
     const numericDailyAmount = this.formatInches(this.firstNumber(supplemental?.dailyGridPrecipAmounts?.[supplementalIndex], supplemental?.dailyPrecipAmounts?.[supplementalIndex]));
     const precipAmount = this.showPrecipAmount(numericDailyAmount) ? numericDailyAmount : this.precipAmountFromText(text);
-    const designation = this.dayDesignation(period, null, text, temp, temp, supplemental);
+    const designation = this.dayDesignation(period, null, text, temp, temp, supplemental, supplementalIndex);
 
     return {
       day: todayLabel,
@@ -1854,7 +1873,7 @@ class WeatherService {
     ];
   }
 
-  dayDesignation(dayPeriod, nightPeriod, text, high, low, supplemental) {
+  dayDesignation(dayPeriod, nightPeriod, text, high, low, supplemental, dayIndex = 0) {
     const dayStart = this.startOfLocalDay(dayPeriod?.startTime || nightPeriod?.startTime);
     const dayEnd = dayStart ? new Date(dayStart.getTime() + 24 * 60 * 60 * 1000) : null;
     const matchingHazards = (supplemental?.alertHazards || []).filter((alert) => this.alertOverlapsDay(alert, dayStart, dayEnd));
@@ -1868,7 +1887,10 @@ class WeatherService {
     const forecastText = `${text || ""} ${dayPeriod?.shortForecast || ""} ${nightPeriod?.shortForecast || ""}`;
     const forecastLevel = this.hazardLevelFromText(forecastText, false);
     if (forecastLevel === "alert") return { level: "alert", label: "Alert" };
+    const quantitativeLevel = this.quantitativeForecastHazardLevel(dayPeriod, nightPeriod, forecastText, supplemental, dayIndex);
+    if (quantitativeLevel === "alert") return { level: "alert", label: "Alert" };
     if (forecastLevel === "impact") return { level: "impact", label: "Impact" };
+    if (quantitativeLevel === "impact") return { level: "impact", label: "Impact" };
     if (spcOutlook?.level === "marginal" && this.hasSupportingSevereSignal(forecastText, supplemental)) return { level: "impact", label: "Impact" };
 
     const apparentHigh = this.forecastHeatIndexValue(forecastText) ?? this.numberOrNull(high);
@@ -1879,6 +1901,39 @@ class WeatherService {
     if (apparentLow !== null && apparentLow <= -15) return { level: "impact", label: "Impact" };
 
     return null;
+  }
+
+  quantitativeForecastHazardLevel(dayPeriod, nightPeriod, forecastText, supplemental = {}, dayIndex = 0) {
+    const index = Number.isInteger(dayIndex) && dayIndex >= 0 ? dayIndex : 0;
+    const gusts = this.numberOrNull(supplemental?.dailyWindGusts?.[index]);
+    const rainfall = this.firstNumber(
+      supplemental?.dailyPrecipAmounts?.[index],
+      supplemental?.dailyGridPrecipAmounts?.[index]
+    );
+    const snowfall = this.numberOrNull(supplemental?.dailySnowfallAmounts?.[index]);
+    const precipChance = Math.max(
+      this.precipValue(dayPeriod),
+      this.precipValue(nightPeriod),
+      this.numberOrNull(supplemental?.dailyGridPrecipChances?.[index]) ?? 0
+    );
+    const text = String(forecastText || "").toLowerCase();
+    const heavyRainSignal = /heavy (?:rain|rainfall)|torrential|flash flood(?:ing)?|widespread flood(?:ing)?/.test(text);
+
+    if (gusts !== null && gusts >= FORECAST_HAZARD_THRESHOLDS.windGustAlertMph) return "alert";
+    if (snowfall !== null && snowfall >= FORECAST_HAZARD_THRESHOLDS.snowAlertInches) return "alert";
+    if (rainfall !== null && rainfall >= FORECAST_HAZARD_THRESHOLDS.rainfallAlertInches) return "alert";
+    if (
+      rainfall !== null
+      && rainfall >= FORECAST_HAZARD_THRESHOLDS.rainfallAlertWithHeavySignalInches
+      && precipChance >= FORECAST_HAZARD_THRESHOLDS.rainfallAlertPrecipChance
+      && heavyRainSignal
+    ) return "alert";
+
+    if (gusts !== null && gusts >= FORECAST_HAZARD_THRESHOLDS.windGustImpactMph) return "impact";
+    if (snowfall !== null && snowfall >= FORECAST_HAZARD_THRESHOLDS.snowImpactInches) return "impact";
+    if (rainfall !== null && rainfall >= FORECAST_HAZARD_THRESHOLDS.rainfallImpactInches) return "impact";
+
+    return "";
   }
 
   hazardLevelFromText(text = "", officialProduct = false) {
@@ -3994,6 +4049,8 @@ async function renderDashboard() {
     if (data.dailyOutlookPromise) {
       data.dailyOutlookPromise.then((daily) => {
         if (requestId !== dashboardRequestId || !Array.isArray(daily)) return;
+        activeDashboardData.daily = daily;
+        lastDailyDays = daily;
         renderDaily(daily);
       }).catch((error) => console.warn("Daily outlook update skipped.", error));
     }
