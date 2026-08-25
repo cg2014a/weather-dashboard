@@ -7,6 +7,17 @@ const ALLOWED_ORIGINS = new Set([
 const TEST_COOLDOWN_MS = 60 * 1000;
 const DELIVERY_LOCK_MS = 5 * 60 * 1000;
 const DUE_BATCH_SIZE = 25;
+const SEVERE_ALERT_EVENTS = new Set([
+  "Tornado Warning",
+  "Severe Thunderstorm Warning",
+  "Flash Flood Warning",
+  "Tornado Watch",
+  "Severe Thunderstorm Watch",
+  "Special Weather Statement",
+  "Blizzard Warning",
+  "Winter Storm Warning",
+  "Ice Storm Warning"
+]);
 
 function json(data, status = 200, origin = "") {
   const headers = new Headers({ "Content-Type": "application/json; charset=utf-8" });
@@ -72,6 +83,10 @@ async function hash(value) {
   const bytes = new TextEncoder().encode(String(value));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function notificationPreference(value, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function localDateParts(timestamp, timezone) {
@@ -160,8 +175,9 @@ async function buildMorningPayload(record, env) {
 }
 
 async function sendPush(record, payload, env) {
+  const { urgency = "high", ...notification } = payload;
   webpush.setVapidDetails(env.VAPID_SUBJECT, env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
-  await webpush.sendNotification(JSON.parse(record.subscription_json), JSON.stringify(payload), { TTL: 900, urgency: "high" });
+  await webpush.sendNotification(JSON.parse(record.subscription_json), JSON.stringify(notification), { TTL: 900, urgency });
 }
 
 async function removeInvalidSubscription(record, env) {
@@ -197,11 +213,13 @@ async function subscribe(request, env, origin) {
   const managementTokenHash = await hash(body.managementToken);
   const endpointHash = await hash(body.subscription.endpoint);
   const nextDelivery = nextSixAm(body.timezone, now);
+  const morningEnabled = notificationPreference(body.morningEnabled, true);
+  const severeAlertsEnabled = notificationPreference(body.severeAlertsEnabled, false);
   await env.NOTIFICATIONS_DB.prepare(`
     INSERT INTO push_subscriptions (
       id, installation_id, management_token_hash, endpoint_hash, subscription_json, timezone,
-      latitude, longitude, enabled, next_delivery_at, delivery_lock_until, test_cooldown_until, created_at, updated_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, 0, 0, ?10, ?10)
+      latitude, longitude, enabled, morning_enabled, severe_alerts_enabled, next_delivery_at, delivery_lock_until, test_cooldown_until, created_at, updated_at
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10, ?11, 0, 0, ?12, ?12)
     ON CONFLICT(installation_id) DO UPDATE SET
       management_token_hash = excluded.management_token_hash,
       endpoint_hash = excluded.endpoint_hash,
@@ -210,10 +228,12 @@ async function subscribe(request, env, origin) {
       latitude = excluded.latitude,
       longitude = excluded.longitude,
       enabled = 1,
+      morning_enabled = excluded.morning_enabled,
+      severe_alerts_enabled = excluded.severe_alerts_enabled,
       next_delivery_at = excluded.next_delivery_at,
       delivery_lock_until = 0,
       updated_at = excluded.updated_at
-  `).bind(id, body.installationId, managementTokenHash, endpointHash, JSON.stringify(body.subscription), body.timezone, Number(body.location.lat), Number(body.location.lon), nextDelivery, now).run();
+  `).bind(id, body.installationId, managementTokenHash, endpointHash, JSON.stringify(body.subscription), body.timezone, Number(body.location.lat), Number(body.location.lon), morningEnabled ? 1 : 0, severeAlertsEnabled ? 1 : 0, nextDelivery, now).run();
   return json({ ok: true }, 200, origin);
 }
 
@@ -232,7 +252,7 @@ async function sendTest(request, env, origin) {
   const tokenHash = await hash(body.managementToken);
   const record = await env.NOTIFICATIONS_DB.prepare(`
     SELECT * FROM push_subscriptions
-    WHERE installation_id = ?1 AND management_token_hash = ?2 AND enabled = 1
+    WHERE installation_id = ?1 AND management_token_hash = ?2 AND enabled = 1 AND morning_enabled = 1
     LIMIT 1
   `).bind(body.installationId, tokenHash).first();
   if (!record) return json({ ok: false, error: "No active notification subscription." }, 404, origin);
@@ -259,17 +279,51 @@ async function sendTest(request, env, origin) {
   }
 }
 
+async function sendSevereAlertTest(request, env, origin) {
+  const body = await readJson(request);
+  if (!validIdentity(body?.installationId) || !validIdentity(body?.managementToken)) return json({ ok: false, error: "Invalid device." }, 400, origin);
+  const now = Date.now();
+  const tokenHash = await hash(body.managementToken);
+  const record = await env.NOTIFICATIONS_DB.prepare(`
+    SELECT * FROM push_subscriptions
+    WHERE installation_id = ?1 AND management_token_hash = ?2 AND enabled = 1 AND severe_alerts_enabled = 1
+    LIMIT 1
+  `).bind(body.installationId, tokenHash).first();
+  if (!record) return json({ ok: false, error: "Severe weather alerts are not enabled." }, 404, origin);
+  const claim = await env.NOTIFICATIONS_DB.prepare(`
+    UPDATE push_subscriptions SET test_cooldown_until = ?1, updated_at = ?2
+    WHERE id = ?3 AND test_cooldown_until <= ?2
+  `).bind(now + TEST_COOLDOWN_MS, now, record.id).run();
+  if (!claim.meta.changes) return json({ ok: false, error: "Please wait before sending another test." }, 429, origin);
+  try {
+    await sendToRecord(record, {
+      title: "SkyStation Severe Alert Test",
+      body: "This is a test of SkyStation severe weather alerts.",
+      url: "https://cg2014a.github.io/weather-dashboard/"
+    }, env);
+    return json({ ok: true }, 200, origin);
+  } catch (error) {
+    console.warn("Web Push severe alert test delivery failed.", {
+      name: error instanceof Error ? error.name : "Error",
+      message: error instanceof Error ? error.message : String(error),
+      status: Number(error?.statusCode || error?.status || 0) || null,
+      responseBody: typeof error?.body === "string" ? error.body.slice(0, 1000) : null
+    });
+    return json({ ok: false, error: "Unable to send severe alert test." }, 502, origin);
+  }
+}
+
 async function processDueNotifications(env) {
   const now = Date.now();
   const due = await env.NOTIFICATIONS_DB.prepare(`
     SELECT * FROM push_subscriptions
-    WHERE enabled = 1 AND next_delivery_at <= ?1 AND delivery_lock_until <= ?1
+    WHERE enabled = 1 AND morning_enabled = 1 AND next_delivery_at <= ?1 AND delivery_lock_until <= ?1
     ORDER BY next_delivery_at ASC LIMIT ?2
   `).bind(now, DUE_BATCH_SIZE).all();
   await Promise.all((due.results || []).map(async (record) => {
     const claimed = await env.NOTIFICATIONS_DB.prepare(`
       UPDATE push_subscriptions SET delivery_lock_until = ?1, updated_at = ?2
-      WHERE id = ?3 AND enabled = 1 AND next_delivery_at <= ?2 AND delivery_lock_until <= ?2
+      WHERE id = ?3 AND enabled = 1 AND morning_enabled = 1 AND next_delivery_at <= ?2 AND delivery_lock_until <= ?2
     `).bind(now + DELIVERY_LOCK_MS, now, record.id).run();
     if (!claimed.meta.changes) return;
     try {
@@ -285,6 +339,122 @@ async function processDueNotifications(env) {
   }));
 }
 
+function alertExpiresAt(properties) {
+  const values = [properties?.ends, properties?.expires, properties?.effective];
+  for (const value of values) {
+    const timestamp = new Date(value || "").getTime();
+    if (Number.isFinite(timestamp)) return timestamp;
+  }
+  return 0;
+}
+
+function formatAlertEnd(timestamp, timezone) {
+  if (!timestamp) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: validTimezone(timezone) ? timezone : "America/Chicago",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(timestamp));
+}
+
+function qualifyingAlerts(payload, now) {
+  return (payload?.features || []).map((feature) => {
+    const properties = feature?.properties || {};
+    const event = String(properties.event || "").trim();
+    const alertId = String(feature?.id || properties.id || "").trim();
+    const expiresAt = alertExpiresAt(properties);
+    if (!alertId || !SEVERE_ALERT_EVENTS.has(event) || (expiresAt && expiresAt <= now)) return null;
+    return { alertId, event, expiresAt, properties };
+  }).filter(Boolean);
+}
+
+async function severeAlertHash(alert) {
+  return hash(JSON.stringify({
+    event: alert.event,
+    ends: alert.properties.ends || "",
+    expires: alert.properties.expires || "",
+    headline: alert.properties.headline || "",
+    description: alert.properties.description || "",
+    instruction: alert.properties.instruction || "",
+    messageType: alert.properties.messageType || "",
+    severity: alert.properties.severity || "",
+    urgency: alert.properties.urgency || ""
+  }));
+}
+
+function severeAlertPayload(alert, timezone) {
+  if (alert.event === "Special Weather Statement") {
+    return {
+      title: alert.event,
+      body: "Special weather conditions are affecting your area. Tap for details.",
+      url: "https://cg2014a.github.io/weather-dashboard/",
+      urgency: "normal"
+    };
+  }
+  const endTime = formatAlertEnd(alert.expiresAt, timezone);
+  return {
+    title: alert.event,
+    body: `${alert.event} for your area${endTime ? ` until ${endTime}` : ""}. Tap for details.`,
+    url: "https://cg2014a.github.io/weather-dashboard/"
+  };
+}
+
+async function claimSevereAlert(record, alert, contentHash, now, env) {
+  const result = await env.NOTIFICATIONS_DB.prepare(`
+    INSERT INTO severe_alert_notifications (subscription_id, alert_id, content_hash, expires_at, notified_at)
+    VALUES (?1, ?2, ?3, ?4, ?5)
+    ON CONFLICT(subscription_id, alert_id) DO UPDATE SET
+      content_hash = excluded.content_hash,
+      expires_at = excluded.expires_at,
+      notified_at = excluded.notified_at
+    WHERE severe_alert_notifications.content_hash <> excluded.content_hash
+  `).bind(record.id, alert.alertId, contentHash, alert.expiresAt, now).run();
+  return Boolean(result.meta.changes);
+}
+
+async function releaseSevereAlertClaim(record, alert, contentHash, env) {
+  await env.NOTIFICATIONS_DB.prepare(`
+    DELETE FROM severe_alert_notifications
+    WHERE subscription_id = ?1 AND alert_id = ?2 AND content_hash = ?3
+  `).bind(record.id, alert.alertId, contentHash).run();
+}
+
+async function processSevereAlerts(env) {
+  const now = Date.now();
+  const subscriptions = await env.NOTIFICATIONS_DB.prepare(`
+    SELECT * FROM push_subscriptions
+    WHERE enabled = 1 AND severe_alerts_enabled = 1
+    ORDER BY updated_at ASC LIMIT ?1
+  `).bind(DUE_BATCH_SIZE).all();
+  await Promise.all((subscriptions.results || []).map(async (record) => {
+    try {
+      const payload = await fetchJson(`https://api.weather.gov/alerts/active?point=${record.latitude},${record.longitude}`, env);
+      const alerts = qualifyingAlerts(payload, now);
+      for (const alert of alerts) {
+        const contentHash = await severeAlertHash(alert);
+        if (!await claimSevereAlert(record, alert, contentHash, now, env)) continue;
+        try {
+          await sendToRecord(record, severeAlertPayload(alert, record.timezone), env);
+        } catch (error) {
+          await releaseSevereAlertClaim(record, alert, contentHash, env);
+          console.warn("Severe weather alert delivery failed.", {
+            event: alert.event,
+            name: error instanceof Error ? error.name : "Error",
+            status: Number(error?.statusCode || error?.status || 0) || null
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("Severe weather alert check failed.", {
+        name: error instanceof Error ? error.name : "Error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }));
+  await env.NOTIFICATIONS_DB.prepare("DELETE FROM severe_alert_notifications WHERE expires_at > 0 AND expires_at < ?1")
+    .bind(now - 24 * 60 * 60 * 1000).run();
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -297,10 +467,11 @@ export default {
     if (request.method === "POST" && url.pathname === "/api/notifications/subscribe") return subscribe(request, env, allowed.origin);
     if (request.method === "POST" && url.pathname === "/api/notifications/unsubscribe") return unsubscribe(request, env, allowed.origin);
     if (request.method === "POST" && url.pathname === "/api/notifications/test") return sendTest(request, env, allowed.origin);
+    if (request.method === "POST" && url.pathname === "/api/notifications/severe-alerts/test") return sendSevereAlertTest(request, env, allowed.origin);
     return json({ ok: false, error: "Not found." }, 404, allowed.origin);
   },
 
   async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(processDueNotifications(env));
+    ctx.waitUntil(Promise.all([processDueNotifications(env), processSevereAlerts(env)]));
   }
 };

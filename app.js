@@ -2599,26 +2599,32 @@ function saveDailyLayoutMode(value) {
 function loadMorningNotificationPreference() {
   try {
     const saved = JSON.parse(localStorage.getItem(MORNING_NOTIFICATION_STORAGE_KEY) || "{}");
-    if (!saved || typeof saved !== "object") return { enabled: false, installationId: "", managementToken: "", subscriptionActive: false };
+    if (!saved || typeof saved !== "object") return { morningEnabled: false, severeAlertsEnabled: false, installationId: "", managementToken: "", subscriptionActive: false };
     return {
-      enabled: saved.enabled === true,
+      morningEnabled: saved.morningEnabled === true || (saved.morningEnabled === undefined && saved.enabled === true),
+      severeAlertsEnabled: saved.severeAlertsEnabled === true,
       installationId: typeof saved.installationId === "string" ? saved.installationId : "",
       managementToken: typeof saved.managementToken === "string" ? saved.managementToken : "",
       subscriptionActive: saved.subscriptionActive === true
     };
   } catch {
-    return { enabled: false, installationId: "", managementToken: "", subscriptionActive: false };
+    return { morningEnabled: false, severeAlertsEnabled: false, installationId: "", managementToken: "", subscriptionActive: false };
   }
 }
 
 function saveMorningNotificationPreference(next) {
+  const merged = { ...morningNotificationPreference, ...next };
   morningNotificationPreference = {
-    ...morningNotificationPreference,
-    ...next,
-    enabled: next?.enabled === true,
-    subscriptionActive: next?.subscriptionActive === true
+    ...merged,
+    morningEnabled: merged.morningEnabled === true,
+    severeAlertsEnabled: merged.severeAlertsEnabled === true,
+    subscriptionActive: merged.subscriptionActive === true
   };
   localStorage.setItem(MORNING_NOTIFICATION_STORAGE_KEY, JSON.stringify(morningNotificationPreference));
+}
+
+function notificationsEnabled(preference = morningNotificationPreference) {
+  return preference.morningEnabled === true || preference.severeAlertsEnabled === true;
 }
 
 function randomDeviceValue() {
@@ -2633,7 +2639,8 @@ function ensureMorningNotificationIdentity() {
       ...morningNotificationPreference,
       installationId: randomDeviceValue(),
       managementToken: randomDeviceValue(),
-      enabled: morningNotificationPreference.enabled,
+      morningEnabled: morningNotificationPreference.morningEnabled,
+      severeAlertsEnabled: morningNotificationPreference.severeAlertsEnabled,
       subscriptionActive: morningNotificationPreference.subscriptionActive
     });
   }
@@ -2674,22 +2681,24 @@ function setMorningNotificationStatus(message) {
 }
 
 function syncMorningNotificationControls() {
-  const enabled = morningNotificationPreference.enabled === true;
   const permissionGranted = typeof Notification !== "undefined" && Notification.permission === "granted";
-  const canTest = enabled && permissionGranted && morningNotificationPreference.subscriptionActive === true;
-  if (elements.morningNotificationToggle) elements.morningNotificationToggle.checked = enabled;
-  if (elements.notificationTestControl) elements.notificationTestControl.hidden = !canTest;
-  if (elements.sendTestNotification) elements.sendTestNotification.disabled = !canTest;
+  const canTest = permissionGranted && morningNotificationPreference.subscriptionActive === true;
+  if (elements.morningNotificationToggle) elements.morningNotificationToggle.checked = morningNotificationPreference.morningEnabled === true;
+  if (elements.severeAlertsToggle) elements.severeAlertsToggle.checked = morningNotificationPreference.severeAlertsEnabled === true;
+  if (elements.notificationTestControl) elements.notificationTestControl.hidden = !(canTest && morningNotificationPreference.morningEnabled);
+  if (elements.severeAlertTestControl) elements.severeAlertTestControl.hidden = !(canTest && morningNotificationPreference.severeAlertsEnabled);
+  if (elements.sendTestNotification) elements.sendTestNotification.disabled = !(canTest && morningNotificationPreference.morningEnabled);
+  if (elements.sendSevereAlertTestNotification) elements.sendSevereAlertTestNotification.disabled = !(canTest && morningNotificationPreference.severeAlertsEnabled);
 }
 
 async function refreshMorningNotificationState() {
   if (!pushNotificationsSupported()) {
-    if (morningNotificationPreference.enabled) saveMorningNotificationPreference({ ...morningNotificationPreference, enabled: false, subscriptionActive: false });
+    if (notificationsEnabled()) saveMorningNotificationPreference({ ...morningNotificationPreference, morningEnabled: false, severeAlertsEnabled: false, subscriptionActive: false });
     syncMorningNotificationControls();
     return false;
   }
   if (Notification.permission !== "granted") {
-    if (morningNotificationPreference.enabled) saveMorningNotificationPreference({ ...morningNotificationPreference, enabled: false, subscriptionActive: false });
+    if (notificationsEnabled()) saveMorningNotificationPreference({ ...morningNotificationPreference, morningEnabled: false, severeAlertsEnabled: false, subscriptionActive: false });
     syncMorningNotificationControls();
     return false;
   }
@@ -2697,8 +2706,8 @@ async function refreshMorningNotificationState() {
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
     const active = Boolean(subscription);
-    if (morningNotificationPreference.enabled !== active || morningNotificationPreference.subscriptionActive !== active) {
-      saveMorningNotificationPreference({ ...morningNotificationPreference, enabled: active, subscriptionActive: active });
+    if (morningNotificationPreference.subscriptionActive !== active) {
+      saveMorningNotificationPreference({ ...morningNotificationPreference, subscriptionActive: active });
     }
     syncMorningNotificationControls();
     return active;
@@ -2708,15 +2717,15 @@ async function refreshMorningNotificationState() {
   }
 }
 
-async function enableMorningNotifications() {
+async function enableNotificationPreferences(nextPreferences) {
   if (!pushNotificationsSupported()) {
     setMorningNotificationStatus("Notifications are not supported on this device.");
-    saveMorningNotificationPreference({ ...morningNotificationPreference, enabled: false, subscriptionActive: false });
+    saveMorningNotificationPreference({ ...nextPreferences, subscriptionActive: false });
     syncMorningNotificationControls();
     return;
   }
 
-  setMorningNotificationStatus("Enabling notifications...");
+  setMorningNotificationStatus("Updating notifications...");
   let createdSubscription = false;
   try {
     const permission = await Notification.requestPermission();
@@ -2741,13 +2750,15 @@ async function enableMorningNotifications() {
         managementToken: identity.managementToken,
         subscription: subscription.toJSON(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago",
-        location: { lat: Number(location.lat), lon: Number(location.lon) }
+        location: { lat: Number(location.lat), lon: Number(location.lon) },
+        morningEnabled: nextPreferences.morningEnabled === true,
+        severeAlertsEnabled: nextPreferences.severeAlertsEnabled === true
       }
     });
-    saveMorningNotificationPreference({ ...identity, enabled: true, subscriptionActive: true });
-    setMorningNotificationStatus("Morning notifications are on.");
+    saveMorningNotificationPreference({ ...identity, ...nextPreferences, subscriptionActive: true });
+    setMorningNotificationStatus("Notification preferences updated.");
   } catch (error) {
-    console.warn("Morning notification setup failed.", error);
+    console.warn("Notification setup failed.", error);
     if (createdSubscription) {
       try {
         const registration = await navigator.serviceWorker.ready;
@@ -2755,13 +2766,13 @@ async function enableMorningNotifications() {
         await subscription?.unsubscribe();
       } catch {}
     }
-    saveMorningNotificationPreference({ ...morningNotificationPreference, enabled: false, subscriptionActive: false });
-    setMorningNotificationStatus("Unable to enable notifications.");
+    saveMorningNotificationPreference({ ...morningNotificationPreference, subscriptionActive: false });
+    setMorningNotificationStatus("Unable to update notifications.");
   }
   syncMorningNotificationControls();
 }
 
-async function disableMorningNotifications() {
+async function disableAllNotifications() {
   setMorningNotificationStatus("Turning notifications off...");
   try {
     const identity = ensureMorningNotificationIdentity();
@@ -2772,8 +2783,8 @@ async function disableMorningNotifications() {
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
     await subscription?.unsubscribe();
-    saveMorningNotificationPreference({ ...identity, enabled: false, subscriptionActive: false });
-    setMorningNotificationStatus("Morning notifications are off.");
+    saveMorningNotificationPreference({ ...identity, morningEnabled: false, severeAlertsEnabled: false, subscriptionActive: false });
+    setMorningNotificationStatus("Notifications are off.");
   } catch (error) {
     console.warn("Morning notification removal failed.", error);
     setMorningNotificationStatus("Unable to turn off notifications.");
@@ -2782,12 +2793,19 @@ async function disableMorningNotifications() {
 }
 
 async function handleMorningNotificationToggle() {
-  if (elements.morningNotificationToggle?.checked) await enableMorningNotifications();
-  else await disableMorningNotifications();
+  const nextPreferences = { ...morningNotificationPreference, morningEnabled: elements.morningNotificationToggle?.checked === true };
+  if (notificationsEnabled(nextPreferences)) await enableNotificationPreferences(nextPreferences);
+  else await disableAllNotifications();
+}
+
+async function handleSevereAlertsToggle() {
+  const nextPreferences = { ...morningNotificationPreference, severeAlertsEnabled: elements.severeAlertsToggle?.checked === true };
+  if (notificationsEnabled(nextPreferences)) await enableNotificationPreferences(nextPreferences);
+  else await disableAllNotifications();
 }
 
 async function sendTestNotification() {
-  if (!morningNotificationPreference.enabled || !morningNotificationPreference.subscriptionActive) return;
+  if (!morningNotificationPreference.morningEnabled || !morningNotificationPreference.subscriptionActive) return;
   setMorningNotificationStatus("Sending test...");
   if (elements.sendTestNotification) elements.sendTestNotification.disabled = true;
   try {
@@ -2802,6 +2820,26 @@ async function sendTestNotification() {
     setMorningNotificationStatus(error?.status === 429
       ? "Please wait a minute before sending another test."
       : "Unable to send test notification.");
+  }
+  syncMorningNotificationControls();
+}
+
+async function sendSevereAlertTestNotification() {
+  if (!morningNotificationPreference.severeAlertsEnabled || !morningNotificationPreference.subscriptionActive) return;
+  setMorningNotificationStatus("Sending severe alert test...");
+  if (elements.sendSevereAlertTestNotification) elements.sendSevereAlertTestNotification.disabled = true;
+  try {
+    const identity = ensureMorningNotificationIdentity();
+    await notificationApi("/api/notifications/severe-alerts/test", {
+      method: "POST",
+      body: { installationId: identity.installationId, managementToken: identity.managementToken }
+    });
+    setMorningNotificationStatus("Severe alert test sent.");
+  } catch (error) {
+    console.warn("Severe alert test failed.", error);
+    setMorningNotificationStatus(error?.status === 429
+      ? "Please wait a minute before sending another test."
+      : "Unable to send severe alert test.");
   }
   syncMorningNotificationControls();
 }
@@ -2874,7 +2912,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "morningNotificationToggle", "notificationTestControl", "sendTestNotification", "morningNotificationStatus",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "morningNotificationToggle", "severeAlertsToggle", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendSevereAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
@@ -3881,7 +3919,9 @@ function bindInteractions() {
       : "7-Day Forecast is using the vertical list view.";
   });
   elements.morningNotificationToggle.addEventListener("change", handleMorningNotificationToggle);
+  elements.severeAlertsToggle.addEventListener("change", handleSevereAlertsToggle);
   elements.sendTestNotification.addEventListener("click", sendTestNotification);
+  elements.sendSevereAlertTestNotification.addEventListener("click", sendSevereAlertTestNotification);
   elements.locationForm.addEventListener("submit", handleLocationSubmit);
   bindPullToRefresh();
 }

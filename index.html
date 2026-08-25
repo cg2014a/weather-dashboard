@@ -129,7 +129,7 @@
           <div class="pollen-list" id="pollenList"></div>
           <p class="pollen-attribution">Pollen data by <a href="https://atmospore.com/" target="_blank" rel="noopener noreferrer">Atmospore</a></p>
         </section>
-<footer class="source-footer">&copy; 2026 SkyStation Weather. All rights reserved. &bull; v1-165</footer>
+<footer class="source-footer">&copy; 2026 SkyStation Weather. All rights reserved. &bull; v1-166</footer>
       </section>
     </main>
     <section class="settings-panel" id="settingsPanel" aria-label="Settings" hidden>
@@ -170,16 +170,27 @@
           <h3 id="notificationSettingsHeading">Notifications</h3>
           <label class="location-toggle">
             <span>
-              <strong>Morning Weather Notification</strong>
+              <strong>Morning Forecast</strong>
               <small>Get a daily SkyStation weather summary at 6:00 AM.</small>
             </span>
             <input id="morningNotificationToggle" type="checkbox" />
             <span class="toggle-track" aria-hidden="true"></span>
           </label>
+          <label class="location-toggle">
+            <span>
+              <strong>Severe Weather Alerts</strong>
+              <small>Notifications for important NWS alerts affecting your location.</small>
+            </span>
+            <input id="severeAlertsToggle" type="checkbox" />
+            <span class="toggle-track" aria-hidden="true"></span>
+          </label>
           <div class="notification-test-control" id="notificationTestControl" hidden>
-            <button id="sendTestNotification" type="button" disabled>Send Test Notification</button>
-            <p id="morningNotificationStatus" class="notification-status" role="status"></p>
+            <button id="sendTestNotification" type="button" disabled>Send Morning Test Notification</button>
           </div>
+          <div class="notification-test-control" id="severeAlertTestControl" hidden>
+            <button id="sendSevereAlertTestNotification" type="button" disabled>Send Severe Alert Test</button>
+          </div>
+          <p id="morningNotificationStatus" class="notification-status" role="status"></p>
         </section>
         <section class="settings-group settings-sources" aria-labelledby="dataSourcesHeading">
           <h3 id="dataSourcesHeading">Data Sources</h3>
