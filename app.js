@@ -1878,48 +1878,68 @@ class WeatherService {
     const dayEnd = dayStart ? new Date(dayStart.getTime() + 24 * 60 * 60 * 1000) : null;
     const matchingHazards = (supplemental?.alertHazards || []).filter((alert) => this.alertOverlapsDay(alert, dayStart, dayEnd));
     const alertHazard = matchingHazards.find((alert) => alert.level === "alert");
-    if (alertHazard) return { level: "alert", label: "Alert", reason: `Active NWS ${alertHazard.event}.` };
+    if (alertHazard) return this.createDayDesignation("alert", [alertHazard.event]);
     const impactHazard = matchingHazards.find((alert) => alert.level === "impact");
-    if (impactHazard) return { level: "impact", label: "Impact", reason: `Active NWS ${impactHazard.event}.` };
+    if (impactHazard) return this.createDayDesignation("impact", [impactHazard.event]);
 
     const spcOutlook = this.spcOutlookForDay(dayStart, supplemental);
-    if (spcOutlook?.level === "alert") return { level: "alert", label: "Alert", reason: `SPC ${spcOutlook.source} outlook for this area.` };
-    if (spcOutlook?.level === "impact") return { level: "impact", label: "Impact", reason: `SPC ${spcOutlook.source} outlook for this area.` };
+    if (spcOutlook?.level === "alert") return this.createDayDesignation("alert", [this.spcOutlookReason(spcOutlook)]);
+    if (spcOutlook?.level === "impact") return this.createDayDesignation("impact", [this.spcOutlookReason(spcOutlook)]);
 
     const forecastText = `${text || ""} ${dayPeriod?.shortForecast || ""} ${nightPeriod?.shortForecast || ""}`;
     const forecastLevel = this.hazardLevelFromText(forecastText, false);
-    if (forecastLevel === "alert") return { level: "alert", label: "Alert", reason: this.forecastHazardReason(forecastText, forecastLevel) };
+    if (forecastLevel === "alert") return this.createDayDesignation("alert", [this.forecastHazardReason(forecastText, forecastLevel)]);
     const quantitativeDesignation = this.quantitativeForecastHazardLevel(dayPeriod, nightPeriod, forecastText, supplemental, dayIndex);
-    if (quantitativeDesignation?.level === "alert") return { label: "Alert", ...quantitativeDesignation };
-    if (forecastLevel === "impact") return { level: "impact", label: "Impact", reason: this.forecastHazardReason(forecastText, forecastLevel) };
-    if (quantitativeDesignation?.level === "impact") return { label: "Impact", ...quantitativeDesignation };
+    if (quantitativeDesignation?.level === "alert") return this.createDayDesignation("alert", quantitativeDesignation.reasons);
+    if (forecastLevel === "impact") return this.createDayDesignation("impact", [this.forecastHazardReason(forecastText, forecastLevel), ...(quantitativeDesignation?.reasons || [])]);
+    if (quantitativeDesignation?.level === "impact") return this.createDayDesignation("impact", quantitativeDesignation.reasons);
     if (spcOutlook?.level === "marginal" && this.hasSupportingSevereSignal(forecastText, supplemental)) {
-      return { level: "impact", label: "Impact", reason: "SPC Marginal outlook with supporting severe-weather forecast signals." };
+      return this.createDayDesignation("impact", ["SPC Marginal Risk", this.forecastHazardReason(forecastText, "impact")]);
     }
 
-    const apparentHigh = this.forecastHeatIndexValue(forecastText) ?? this.numberOrNull(high);
-    const apparentLow = this.forecastWindChillValue(forecastText) ?? this.numberOrNull(low);
-    if (apparentHigh !== null && apparentHigh >= 110) return { level: "alert", label: "Alert", reason: `Forecast heat index/high near ${Math.round(apparentHigh)}°F.` };
-    if (apparentHigh !== null && apparentHigh >= 105) return { level: "impact", label: "Impact", reason: `Forecast heat index/high near ${Math.round(apparentHigh)}°F.` };
-    if (apparentLow !== null && apparentLow <= -25) return { level: "alert", label: "Alert", reason: `Forecast wind chill/low near ${Math.round(apparentLow)}°F.` };
-    if (apparentLow !== null && apparentLow <= -15) return { level: "impact", label: "Impact", reason: `Forecast wind chill/low near ${Math.round(apparentLow)}°F.` };
+    const heatIndex = this.forecastHeatIndexValue(forecastText);
+    const windChill = this.forecastWindChillValue(forecastText);
+    const apparentHigh = heatIndex ?? this.numberOrNull(high);
+    const apparentLow = windChill ?? this.numberOrNull(low);
+    const highReason = heatIndex === null ? `Forecast high ${Math.round(apparentHigh)}°F` : `Heat index ${Math.round(apparentHigh)}°F+`;
+    const lowReason = windChill === null ? `Forecast low ${Math.round(apparentLow)}°F` : `Wind chill ${Math.round(apparentLow)}°F`;
+    if (apparentHigh !== null && apparentHigh >= 110) return this.createDayDesignation("alert", [highReason]);
+    if (apparentHigh !== null && apparentHigh >= 105) return this.createDayDesignation("impact", [highReason]);
+    if (apparentLow !== null && apparentLow <= -25) return this.createDayDesignation("alert", [lowReason]);
+    if (apparentLow !== null && apparentLow <= -15) return this.createDayDesignation("impact", [lowReason]);
 
     return null;
   }
 
+  createDayDesignation(level, reasons = []) {
+    return {
+      level,
+      label: level === "alert" ? "Alert" : "Impact",
+      reasons: [...new Set(reasons.filter(Boolean))].slice(0, 3)
+    };
+  }
+
+  spcOutlookReason(outlook = {}) {
+    const source = String(outlook.source || "").trim();
+    const risk = source.replace(/^enh$/i, "Enhanced").replace(/^slgt$/i, "Slight").replace(/^mdt$/i, "Moderate");
+    return /marginal|slight|enhanced|moderate|high/i.test(risk)
+      ? `SPC ${risk.replace(/\s*risk$/i, "")} Risk`
+      : `SPC ${risk || "elevated"} outlook`;
+  }
+
   forecastHazardReason(forecastText = "", level = "impact") {
     const text = String(forecastText || "").toLowerCase();
-    if (/tornado(?:es)?/.test(text)) return "Forecast indicates tornado potential.";
-    if (/blizzard/.test(text)) return "Forecast calls for blizzard conditions.";
-    if (/icing|freezing rain/.test(text)) return level === "alert" ? "Forecast indicates significant icing." : "Forecast calls for travel-impacting ice.";
-    if (/flood/.test(text)) return level === "alert" ? "Forecast indicates major flash flooding." : "Forecast calls for flooding concerns.";
-    if (/strong|severe thunderstorms?/.test(text)) return "Forecast calls for strong thunderstorms.";
-    if (/damaging winds?/.test(text)) return "Forecast calls for damaging winds.";
-    if (/large hail/.test(text)) return "Forecast calls for large hail.";
-    if (/heavy (?:rain|rainfall|snow)/.test(text)) return "Forecast calls for heavy precipitation.";
-    if (/dense fog/.test(text)) return "Forecast calls for dense fog.";
-    if (/smoke|air quality/.test(text)) return "Forecast calls for degraded air quality.";
-    return "Forecast conditions may significantly affect plans.";
+    if (/tornado(?:es)?/.test(text)) return "Tornado potential";
+    if (/blizzard/.test(text)) return "Blizzard conditions";
+    if (/icing|freezing rain/.test(text)) return level === "alert" ? "Significant icing" : "Travel-impacting ice";
+    if (/flood/.test(text)) return level === "alert" ? "Major flash flooding" : "Heavy rain / flooding signal";
+    if (/strong|severe thunderstorms?/.test(text)) return "Strong thunderstorms";
+    if (/damaging winds?/.test(text)) return "Damaging winds";
+    if (/large hail/.test(text)) return "Large hail";
+    if (/heavy (?:rain|rainfall|snow)/.test(text)) return "Heavy precipitation";
+    if (/dense fog/.test(text)) return "Dense fog";
+    if (/smoke|air quality/.test(text)) return "Air-quality impact";
+    return "Significant forecast conditions";
   }
 
   quantitativeForecastHazardLevel(dayPeriod, nightPeriod, forecastText, supplemental = {}, dayIndex = 0) {
@@ -1938,19 +1958,22 @@ class WeatherService {
     const text = String(forecastText || "").toLowerCase();
     const heavyRainSignal = /heavy (?:rain|rainfall)|torrential|flash flood(?:ing)?|widespread flood(?:ing)?/.test(text);
 
-    if (gusts !== null && gusts >= FORECAST_HAZARD_THRESHOLDS.windGustAlertMph) return { level: "alert", reason: `Forecast wind gusts up to ${Math.round(gusts)} mph.` };
-    if (snowfall !== null && snowfall >= FORECAST_HAZARD_THRESHOLDS.snowAlertInches) return { level: "alert", reason: `Forecast snowfall around ${this.formatInches(snowfall)}.` };
-    if (rainfall !== null && rainfall >= FORECAST_HAZARD_THRESHOLDS.rainfallAlertInches) return { level: "alert", reason: `Forecast rainfall around ${this.formatInches(rainfall)}.` };
+    const alertReasons = [];
+    const impactReasons = [];
+    if (gusts !== null && gusts >= FORECAST_HAZARD_THRESHOLDS.windGustAlertMph) alertReasons.push(`Wind gusts ${Math.round(gusts)} mph`);
+    else if (gusts !== null && gusts >= FORECAST_HAZARD_THRESHOLDS.windGustImpactMph) impactReasons.push(`Wind gusts ${Math.round(gusts)} mph`);
+    if (snowfall !== null && snowfall >= FORECAST_HAZARD_THRESHOLDS.snowAlertInches) alertReasons.push(`Snowfall ${this.formatInches(snowfall)}`);
+    else if (snowfall !== null && snowfall >= FORECAST_HAZARD_THRESHOLDS.snowImpactInches) impactReasons.push(`Snowfall ${this.formatInches(snowfall)}`);
+    if (rainfall !== null && rainfall >= FORECAST_HAZARD_THRESHOLDS.rainfallAlertInches) alertReasons.push(`Rainfall ${this.formatInches(rainfall)}`);
+    else if (rainfall !== null && rainfall >= FORECAST_HAZARD_THRESHOLDS.rainfallImpactInches) impactReasons.push(`Rainfall ${this.formatInches(rainfall)}`);
     if (
       rainfall !== null
       && rainfall >= FORECAST_HAZARD_THRESHOLDS.rainfallAlertWithHeavySignalInches
       && precipChance >= FORECAST_HAZARD_THRESHOLDS.rainfallAlertPrecipChance
       && heavyRainSignal
-    ) return { level: "alert", reason: `Forecast heavy rain around ${this.formatInches(rainfall)} with a ${Math.round(precipChance)}% chance.` };
-
-    if (gusts !== null && gusts >= FORECAST_HAZARD_THRESHOLDS.windGustImpactMph) return { level: "impact", reason: `Forecast wind gusts up to ${Math.round(gusts)} mph.` };
-    if (snowfall !== null && snowfall >= FORECAST_HAZARD_THRESHOLDS.snowImpactInches) return { level: "impact", reason: `Forecast snowfall around ${this.formatInches(snowfall)}.` };
-    if (rainfall !== null && rainfall >= FORECAST_HAZARD_THRESHOLDS.rainfallImpactInches) return { level: "impact", reason: `Forecast rainfall around ${this.formatInches(rainfall)}.` };
+    ) alertReasons.push("Heavy rain / flooding signal");
+    if (alertReasons.length) return { level: "alert", reasons: [...alertReasons, ...impactReasons] };
+    if (impactReasons.length) return { level: "impact", reasons: impactReasons };
 
     return null;
   }
@@ -3860,14 +3883,16 @@ function renderDesignationNotice(designation) {
   const notice = document.createElement("aside");
   const badge = document.createElement("span");
   const copy = document.createElement("span");
+  const why = document.createElement("span");
   const level = designation?.level === "alert" ? "alert" : "impact";
   notice.className = `day-designation-notice ${level}`;
   badge.className = `day-designation ${level}`;
   badge.textContent = level === "alert" ? "Alert" : "Impact";
   copy.textContent = level === "alert"
-    ? `${designation?.reason || "Potentially dangerous or high-impact weather is expected."} Stay aware and be ready to take action.`
-    : `${designation?.reason || "Weather may significantly affect your plans."} Stay weather-aware and prepare for possible disruptions.`;
-  notice.append(badge, copy);
+    ? "Potentially dangerous or high-impact weather is expected. Stay aware and be ready to take action."
+    : "Weather may significantly affect your plans. Stay weather-aware and prepare for possible disruptions.";
+  why.textContent = `Why: ${(designation?.reasons || []).join(" · ") || "Significant forecast conditions"}`;
+  notice.append(badge, copy, why);
   return notice;
 }
 
