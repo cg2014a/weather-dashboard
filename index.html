@@ -13,6 +13,7 @@
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.svg" />
     <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="style.css" />
+    <script src="version.js"></script>
   </head>
   <body>
     <div class="pull-refresh" id="pullRefresh" aria-hidden="true">Release to refresh</div>
@@ -129,7 +130,7 @@
           <div class="pollen-list" id="pollenList"></div>
           <p class="pollen-attribution">Pollen data by <a href="https://atmospore.com/" target="_blank" rel="noopener noreferrer">Atmospore</a></p>
         </section>
-<footer class="source-footer">&copy; 2026 SkyStation Weather. All rights reserved. &bull; v1-166</footer>
+<footer class="source-footer">&copy; 2026 SkyStation Weather. All rights reserved. &bull; <span id="appVersion"></span></footer>
       </section>
     </main>
     <section class="settings-panel" id="settingsPanel" aria-label="Settings" hidden>

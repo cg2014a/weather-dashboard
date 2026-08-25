@@ -1,7 +1,10 @@
-const CACHE_NAME = "skystation-v1-166";
+importScripts("./version.js");
+
+const CACHE_NAME = self.SKYSTATION_CACHE_NAME;
 const APP_SHELL = [
   "./",
   "./index.html",
+  "./version.js",
   "./style.css",
   "./atmospore-client.js",
   "./app.js",

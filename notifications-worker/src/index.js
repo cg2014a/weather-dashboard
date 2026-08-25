@@ -6,6 +6,7 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 const TEST_COOLDOWN_MS = 60 * 1000;
 const DELIVERY_LOCK_MS = 5 * 60 * 1000;
+const PAYLOAD_RETRY_DELAY_MS = 60 * 1000;
 const DUE_BATCH_SIZE = 25;
 const SEVERE_ALERT_EVENTS = new Set([
   "Tornado Warning",
@@ -308,8 +309,16 @@ async function processDueNotifications(env) {
       WHERE id = ?3 AND enabled = 1 AND morning_enabled = 1 AND next_delivery_at <= ?2 AND delivery_lock_until <= ?2
     `).bind(now + DELIVERY_LOCK_MS, now, record.id).run();
     if (!claimed.meta.changes) return;
+    let payload;
     try {
-      const payload = await buildMorningPayload(record, env);
+      payload = await buildMorningPayload(record, env);
+    } catch (error) {
+      console.warn("Morning notification payload build failed.", error);
+      await env.NOTIFICATIONS_DB.prepare("UPDATE push_subscriptions SET delivery_lock_until = ?1, updated_at = ?2 WHERE id = ?3")
+        .bind(now + PAYLOAD_RETRY_DELAY_MS, now, record.id).run();
+      return;
+    }
+    try {
       await sendToRecord(record, payload, env);
       await env.NOTIFICATIONS_DB.prepare("UPDATE push_subscriptions SET next_delivery_at = ?1, delivery_lock_until = 0, updated_at = ?2 WHERE id = ?3")
         .bind(nextSixAm(record.timezone, now), now, record.id).run();
