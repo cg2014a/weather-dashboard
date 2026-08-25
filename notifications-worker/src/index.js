@@ -142,7 +142,7 @@ function weatherSummary(forecast, hourly, alerts) {
     .join(" • ");
   const alert = alerts?.features?.[0]?.properties?.event;
   return {
-    title: "SkyStation Forecast",
+    title: "Morning Forecast",
     body: [`${temperature} • High ${high} / Low ${low}`, weatherLine, alert || ""].filter(Boolean).join("\n"),
     url: "https://cg2014a.github.io/weather-dashboard/"
   };
