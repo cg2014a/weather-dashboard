@@ -156,10 +156,12 @@ function weatherSummary(forecast, hourly, alerts) {
   const weatherLine = [day.shortForecast || current.shortForecast || "Forecast updating", precipitation > 0 ? `Rain ${Math.round(precipitation)}%` : ""]
     .filter(Boolean)
     .join(" • ");
+  const outlook = String(day.detailedForecast || "").replace(/\s+/g, " ").trim();
+  const whatToExpect = outlook ? `What to expect: ${outlook.slice(0, 700)}` : "";
   const alert = alerts?.features?.[0]?.properties?.event;
   return {
     title: "Morning Forecast",
-    body: [`${temperature} • High ${high} / Low ${low}`, weatherLine, alert || ""].filter(Boolean).join("\n"),
+    body: [`${temperature} • High ${high} / Low ${low}`, weatherLine, alert || "", whatToExpect].filter(Boolean).join("\n"),
     url: "https://cg2014a.github.io/weather-dashboard/"
   };
 }
