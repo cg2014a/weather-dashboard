@@ -12,12 +12,43 @@ const SEVERE_ALERT_EVENTS = new Set([
   "Tornado Warning",
   "Severe Thunderstorm Warning",
   "Flash Flood Warning",
-  "Tornado Watch",
-  "Severe Thunderstorm Watch",
-  "Special Weather Statement",
+  "Flood Warning",
   "Blizzard Warning",
   "Winter Storm Warning",
-  "Ice Storm Warning"
+  "Ice Storm Warning",
+  "Extreme Heat Warning",
+  "Excessive Heat Warning",
+  "Extreme Cold Warning",
+  "High Wind Warning",
+  "Dust Storm Warning",
+  "Tornado Watch",
+  "Severe Thunderstorm Watch",
+  "Flood Watch",
+  "Winter Storm Watch",
+  "Extreme Cold Watch",
+  "High Wind Watch",
+  "Heat Advisory",
+  "Cold Weather Advisory",
+  "Winter Weather Advisory",
+  "Wind Advisory",
+  "Dense Fog Advisory",
+  "Red Flag Warning",
+  "Special Weather Statement",
+]);
+const HIGH_URGENCY_ALERT_EVENTS = new Set([
+  "Tornado Warning",
+  "Severe Thunderstorm Warning",
+  "Flash Flood Warning",
+  "Flood Warning",
+  "Blizzard Warning",
+  "Winter Storm Warning",
+  "Ice Storm Warning",
+  "Extreme Heat Warning",
+  "Excessive Heat Warning",
+  "Extreme Cold Warning",
+  "High Wind Warning",
+  "Dust Storm Warning",
+  "Red Flag Warning"
 ]);
 
 function json(data, status = 200, origin = "") {
@@ -409,6 +440,18 @@ function formatAlertEnd(timestamp, timezone) {
   }).format(new Date(timestamp));
 }
 
+function conciseAlertDetail(alert) {
+  const properties = alert?.properties || {};
+  const candidates = [properties.headline, properties.description, properties.instruction];
+  for (const value of candidates) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    const sentence = text.match(/^.*?(?:[.!?](?:\s|$)|$)/)?.[0]?.trim() || text;
+    if (sentence) return sentence.slice(0, 240);
+  }
+  return alert?.event || "NWS alert affecting your area.";
+}
+
 function qualifyingAlerts(payload, now) {
   return (payload?.features || []).map((feature) => {
     const properties = feature?.properties || {};
@@ -446,8 +489,9 @@ function severeAlertPayload(alert, timezone) {
   const endTime = formatAlertEnd(alert.expiresAt, timezone);
   return {
     title: alert.event,
-    body: `${alert.event} for your area${endTime ? ` until ${endTime}` : ""}. Tap for details.`,
-    url: "https://cg2014a.github.io/weather-dashboard/"
+    body: `${conciseAlertDetail(alert)}${endTime ? ` Until ${endTime}.` : ""} Tap for details.`,
+    url: "https://cg2014a.github.io/weather-dashboard/",
+    urgency: HIGH_URGENCY_ALERT_EVENTS.has(alert.event) ? "high" : "normal"
   };
 }
 
