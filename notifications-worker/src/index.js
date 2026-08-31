@@ -174,18 +174,6 @@ async function fetchJson(url, env) {
   return response.json();
 }
 
-function weatherEmoji(text) {
-  const value = String(text || "").toLowerCase();
-  if (/snow|flurr/.test(value)) return "❄️";
-  if (/sleet|freezing rain|ice pellet/.test(value)) return "🌨️";
-  if (/thunder|storm/.test(value)) return "⛈️";
-  if (/rain|shower|drizzle/.test(value)) return "🌧️";
-  if (/cloud|overcast/.test(value)) return "☁️";
-  if (/partly|mostly sunny/.test(value)) return "🌤️";
-  if (/sunny|clear/.test(value)) return "☀️";
-  return "🌡️";
-}
-
 function precipitationLabel(text) {
   const value = String(text || "").toLowerCase();
   if (/snow|flurr/.test(value)) return "Snow";
@@ -204,32 +192,32 @@ function dynamicForecastLine(day, alerts) {
   const shortForecast = String(day?.shortForecast || "");
   const text = `${shortForecast} ${outlook}`;
   const activeAlert = alerts?.features?.[0]?.properties?.event;
-  if (activeAlert) return `⚠️ ${activeAlert}`;
+  if (activeAlert) return activeAlert;
 
   const heatIndex = firstForecastNumber(outlook, /heat index(?: values)?(?: as high as| up to)?\s*(\d+)/i);
-  if (heatIndex !== null) return `🔥 Heat index up to ${heatIndex}°`;
+  if (heatIndex !== null) return `Heat index up to ${heatIndex}°`;
 
   const snowRange = outlook.match(/(\d+(?:\.\d+)?)\s*(?:to|-)\s*(\d+(?:\.\d+)?)\s*in(?:ch|ches)?(?: of)?\s*snow|snow(?:fall)?(?:[^.]{0,40})?(\d+(?:\.\d+)?)\s*(?:to|-)\s*(\d+(?:\.\d+)?)\s*in(?:ch|ches)?/i);
   if (snowRange) {
     const low = snowRange[1] || snowRange[3];
     const high = snowRange[2] || snowRange[4];
-    return `❄️ ${low}–${high} in of snow possible`;
+    return `${low}–${high} in of snow possible`;
   }
   const snowTotal = firstForecastNumber(outlook, /(?:snow(?:fall)?(?:[^.]{0,40})?|)(\d+(?:\.\d+)?)\s*in(?:ch|ches)?(?: of)?\s*snow/i)
     ?? firstForecastNumber(outlook, /snow(?:fall)?(?:[^.]{0,40})?(\d+(?:\.\d+)?)\s*in(?:ch|ches)?/i);
-  if (snowTotal !== null) return `❄️ ${snowTotal} in of snow possible`;
+  if (snowTotal !== null) return `${snowTotal} in of snow possible`;
 
   const gusts = firstForecastNumber(outlook, /gusts?(?: as high as| up to)?\s*(\d+)/i);
-  if (gusts !== null) return `💨 Gusts up to ${gusts} mph`;
+  if (gusts !== null) return `Gusts up to ${gusts} mph`;
 
   if (/thunderstorm|thunderstorms|strong storms/i.test(text)) {
     const timing = outlook.match(/\b(after|around|between)\s+([^,.]+)/i);
-    return timing ? `⛈️ Storms possible ${timing[1].toLowerCase()} ${timing[2]}` : "⛈️ Storms possible today";
+    return timing ? `Storms possible ${timing[1].toLowerCase()} ${timing[2]}` : "Storms possible today";
   }
   if (/rain|showers|drizzle/i.test(text)) {
-    if (/afternoon/i.test(outlook)) return "🌧️ Rain likely this afternoon";
-    if (/evening|tonight/i.test(outlook)) return "🌧️ Rain likely this evening";
-    return "🌧️ Rain likely today";
+    if (/afternoon/i.test(outlook)) return "Rain likely this afternoon";
+    if (/evening|tonight/i.test(outlook)) return "Rain likely this evening";
+    return "Rain likely today";
   }
 
   return "";
@@ -246,7 +234,7 @@ function weatherSummary(forecast, hourly, alerts) {
   const low = Number.isFinite(Number(night.temperature)) ? `${Math.round(Number(night.temperature))}°` : "--";
   const precipitation = Number(day?.probabilityOfPrecipitation?.value);
   const condition = day.shortForecast || current.shortForecast || "Forecast updating";
-  const weatherLine = [`${weatherEmoji(condition)} ${condition}`, `${precipitationLabel(condition)} ${Number.isFinite(precipitation) ? Math.round(precipitation) : 0}%`]
+  const weatherLine = [condition, `${precipitationLabel(condition)} ${Number.isFinite(precipitation) ? Math.round(precipitation) : 0}%`]
     .filter(Boolean)
     .join(" • ");
   return {
