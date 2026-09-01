@@ -1623,18 +1623,28 @@ class WeatherService {
   mapAlert(alerts) {
     const activeAlerts = alerts?.features?.map((feature) => feature.properties).filter(Boolean) || [];
     if (!activeAlerts.length) return null;
-    const headline = activeAlerts.length > 1 ? `${activeAlerts.length} Weather Alerts` : activeAlerts[0].event || "Weather Alert";
-    const summary = activeAlerts.length > 1
-      ? activeAlerts.map((alert) => alert.event || alert.headline || "Weather Alert").join(" • ")
-      : activeAlerts[0].headline || activeAlerts[0].description || "An active weather alert has been issued for this area.";
-    const sections = activeAlerts.map((alert, index) => ({
-      title: activeAlerts.length > 1 ? `Alert ${index + 1}: ${alert.event || "Weather Alert"}` : alert.event || "Weather Alert",
-      body: [
-        this.cleanAlertText(alert.description),
-        alert.instruction ? `What to do:\n${this.cleanAlertText(alert.instruction)}` : "",
-        alert.areaDesc ? `Areas affected:\n${this.cleanAlertText(alert.areaDesc)}` : "",
-        alert.expires ? `Expires:\n${this.formatAlertTime(alert.expires)}` : ""
-      ].filter(Boolean).join("\n\n")
+    const eventName = (alert) => String(alert?.event || alert?.headline || "Weather Alert").trim() || "Weather Alert";
+    const eventNames = [...new Set(activeAlerts.map(eventName))];
+    const headline = eventNames.length > 1 ? `${eventNames.length} Weather Alerts` : eventNames[0];
+    const summary = eventNames.join(" • ");
+    const groupedAlerts = new Map();
+    activeAlerts.forEach((alert) => {
+      const name = eventName(alert);
+      const records = groupedAlerts.get(name) || [];
+      records.push(alert);
+      groupedAlerts.set(name, records);
+    });
+    const sections = [...groupedAlerts.entries()].map(([name, records]) => ({
+      title: records.length > 1 ? `${name} (${records.length} issuances)` : name,
+      body: records.map((alert, index) => {
+        const recordBody = [
+          this.cleanAlertText(alert.description),
+          alert.instruction ? `What to do:\n${this.cleanAlertText(alert.instruction)}` : "",
+          alert.areaDesc ? `Areas affected:\n${this.cleanAlertText(alert.areaDesc)}` : "",
+          alert.expires ? `Expires:\n${this.formatAlertTime(alert.expires)}` : ""
+        ].filter(Boolean).join("\n\n");
+        return records.length > 1 ? `Record ${index + 1}\n${recordBody}` : recordBody;
+      }).filter(Boolean).join("\n\n")
     }));
 
     return {
