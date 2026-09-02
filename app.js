@@ -156,6 +156,7 @@ class WeatherService {
     };
     const current = this.mapCurrent(currentPeriod, dailyPeriods, hourlyPeriods, observation, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental, observation);
+    const currentWind = this.finalizeCurrentWind(currentPeriod, observation, enrichedSupplemental);
     const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, enrichedSupplemental, spcOutlooksPromise);
     const dailyOutlookPromise = spcOutlooksPromise
       .then((spcOutlooks) => this.mapDaily(dailyPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
@@ -167,12 +168,12 @@ class WeatherService {
     return {
       location: { city: location.label },
       current,
-      summaryStats: this.mapSummaryStats(current, currentPeriod, observation, precipitation, null, enrichedSupplemental),
+      summaryStats: this.mapSummaryStats(current, currentPeriod, observation, precipitation, null, enrichedSupplemental, currentWind),
       narrative: this.mapNarrative(currentPeriod, dailyPeriods),
       precipitation,
-      details: this.mapDetails(currentPeriod, observation, precipitation, enrichedSupplemental),
+      details: this.mapDetails(currentPeriod, observation, precipitation, enrichedSupplemental, currentWind),
       alert: this.mapAlert(alerts || { features: [] }),
-      hourly: this.mapHourly(hourlyPeriods, enrichedSupplemental),
+      hourly: this.mapHourly(hourlyPeriods, enrichedSupplemental, currentWind),
       daily: this.mapDaily(dailyPeriods, enrichedSupplemental),
       dailyOutlookPromise,
       supplementalUpdatePromise
@@ -205,6 +206,7 @@ class WeatherService {
     };
     const current = this.mapCurrent(currentPeriod, forecastPeriods, hourlyPeriods, null, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental, null);
+    const currentWind = this.finalizeCurrentWind(currentPeriod, null, enrichedSupplemental);
     const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, forecastPeriods, null, precipitation, enrichedSupplemental, spcOutlooksPromise);
     const dailyOutlookPromise = spcOutlooksPromise
       .then((spcOutlooks) => this.mapDaily(forecastPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
@@ -216,12 +218,12 @@ class WeatherService {
     return {
       location: { city: location.label },
       current,
-      summaryStats: this.mapSummaryStats(current, currentPeriod, null, precipitation, null, enrichedSupplemental),
+      summaryStats: this.mapSummaryStats(current, currentPeriod, null, precipitation, null, enrichedSupplemental, currentWind),
       narrative: "Weather conditions are shown from the backup forecast source.",
       precipitation,
-      details: this.mapDetails(currentPeriod, null, precipitation, enrichedSupplemental),
+      details: this.mapDetails(currentPeriod, null, precipitation, enrichedSupplemental, currentWind),
       alert: null,
-      hourly: this.mapHourly(hourlyPeriods, enrichedSupplemental),
+      hourly: this.mapHourly(hourlyPeriods, enrichedSupplemental, currentWind),
       daily: this.mapDaily(forecastPeriods, enrichedSupplemental),
       dailyOutlookPromise,
       supplementalUpdatePromise
@@ -1311,11 +1313,20 @@ class WeatherService {
     };
   }
 
-  mapSummaryStats(current, period, observation, precipitation, airQuality, supplemental) {
-    const windValue = this.readObservedWind(observation)
+  finalizeCurrentWind(period, observation, supplemental) {
+    const wind = this.readObservedWind(observation)
       || this.formatOpenMeteoWind(supplemental)
       || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim()
       || "0 mph";
+    const windSpeed = wind.match(/\d+(?:\.\d+)?\s*mph/i)?.[0] || wind;
+    const windDirection = this.isFreshObservation(observation)
+      ? this.windDirectionLabel(observation?.properties?.windDirection?.value)
+      : this.windDirectionLabel(supplemental?.windDirection) || period?.windDirection || "";
+    return { wind, windSpeed, windDirection, gust: this.readWindGust(period, supplemental, observation) };
+  }
+
+  mapSummaryStats(current, period, observation, precipitation, airQuality, supplemental, currentWind = null) {
+    const windValue = currentWind?.wind || this.finalizeCurrentWind(period, observation, supplemental).wind;
     return [
       { icon: "real-feel.svg", label: "High/Low", value: `${this.formatMaybeTemp(current.high)} / ${this.formatMaybeTemp(current.low)}` },
       { icon: "wind.svg", label: "Wind", value: windValue },
@@ -1516,9 +1527,10 @@ class WeatherService {
     });
   }
 
-  mapDetails(period, observation, precipitation, supplemental) {
-    const wind = this.readObservedWind(observation) || this.formatOpenMeteoWind(supplemental) || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || "0 mph";
-    const windGust = this.readWindGust(period, supplemental, observation);
+  mapDetails(period, observation, precipitation, supplemental, currentWind = null) {
+    const finalizedWind = currentWind || this.finalizeCurrentWind(period, observation, supplemental);
+    const wind = finalizedWind.wind;
+    const windGust = finalizedWind.gust;
     const humidity = this.readHumidity(observation, supplemental, period);
     const dewPoint = this.dewPointFahrenheit(observation, supplemental);
     const cloudCover = this.readPercent(this.firstNumber(supplemental?.cloudCover, supplemental?.gridCloudCover));
@@ -1699,7 +1711,7 @@ class WeatherService {
     });
   }
 
-  mapHourly(periods, supplemental = {}) {
+  mapHourly(periods, supplemental = {}, currentWind = null) {
     return periods.slice(0, 12).map((period, index) => {
       const windSpeed = this.firstNumber(supplemental?.hourlyWindSpeeds?.[index]);
       const windDirection = this.windDirectionLabel(this.firstNumber(supplemental?.hourlyWindDirections?.[index])) || period.windDirection || "";
@@ -1707,14 +1719,15 @@ class WeatherService {
       const humidity = this.firstNumber(supplemental?.hourlyHumidity?.[index]);
       const dewPoint = this.firstNumber(supplemental?.hourlyDewPoints?.[index]);
       const uvIndex = this.firstNumber(supplemental?.hourlyUvIndexes?.[index], supplemental?.uvIndex);
+      const finalizedCurrent = index === 0 && currentWind ? currentWind : null;
       return {
         time: period.startTime,
         icon: this.iconForForecast(period.shortForecast, period.isDaytime),
         temp: period.temperature,
         precip: `${this.precipValue(period, supplemental)}%`,
-        wind: windSpeed === null ? period.windSpeed || "0 mph" : `${Math.round(windSpeed)} mph`,
-        windDirection,
-        windGust: windGust === null ? "" : `${Math.round(windGust)} mph`,
+        wind: finalizedCurrent?.windSpeed || (windSpeed === null ? period.windSpeed || "0 mph" : `${Math.round(windSpeed)} mph`),
+        windDirection: finalizedCurrent?.windDirection || windDirection,
+        windGust: finalizedCurrent?.gust || (windGust === null ? "" : `${Math.round(windGust)} mph`),
         humidity: humidity === null ? "" : this.readPercent(humidity),
         dewPoint,
         dewPointLabel: this.formatMaybeTemp(dewPoint),
