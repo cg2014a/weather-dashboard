@@ -2793,6 +2793,7 @@ let locationRequestId = 0;
 let lastHourlyHours = [];
 let lastDailyDays = [];
 let activeDashboardData = null;
+let hourlySelectionActive = false;
 let activeHourlyIndex = 0;
 let activeHourlyMetric = "precip";
 let dailyLayoutMode = loadDailyLayoutMode();
@@ -3848,13 +3849,16 @@ function setActiveHourly(index) {
   const chartHours = getCurrentHourForecast(lastHourlyHours).slice(0, 8);
   if (!chartHours.length) return;
   activeHourlyIndex = Math.max(0, Math.min(index, chartHours.length - 1));
+  hourlySelectionActive = activeHourlyIndex !== 0;
   elements.hourlyForecast.querySelectorAll(".hourly-column").forEach((column, columnIndex) => {
     const isActive = columnIndex === activeHourlyIndex;
     column.classList.toggle("is-active", isActive);
     column.setAttribute("aria-pressed", isActive ? "true" : "false");
   });
-  if (activeDashboardData?.details) {
+  if (hourlySelectionActive && activeDashboardData?.details) {
     renderDetails(hourlyDetailCards(chartHours[activeHourlyIndex], activeDashboardData.details), { preserveAllergenAlerts: true });
+  } else if (activeDashboardData?.details) {
+    renderDetails(activeDashboardData.details);
   }
 }
 
@@ -4309,11 +4313,12 @@ async function renderDashboard() {
     if (requestId !== dashboardRequestId) return;
     activeDashboardData = data;
     activeHourlyIndex = 0;
+    hourlySelectionActive = false;
     activeHourlyMetric = "precip";
     syncHourlyMetricControls();
     renderCurrentWeather(data);
     renderSummaryStats(data.summaryStats);
-    renderDetails(hourlyDetailCards(getCurrentHourForecast(Array.isArray(data.hourly) ? data.hourly : []).slice(0, 8)[0], data.details));
+    renderDetails(data.details);
     renderPrecipitation(data.precipitation);
     renderAlert(data.alert);
     renderHourly(data.hourly);
@@ -4335,8 +4340,12 @@ async function renderDashboard() {
           lastDailyDays = update.daily;
           renderDaily(update.daily);
         }
-        const hour = getCurrentHourForecast(Array.isArray(activeDashboardData.hourly) ? activeDashboardData.hourly : []).slice(0, 8)[activeHourlyIndex];
-        renderDetails(hourlyDetailCards(hour, activeDashboardData.details));
+        if (hourlySelectionActive) {
+          const hour = getCurrentHourForecast(Array.isArray(activeDashboardData.hourly) ? activeDashboardData.hourly : []).slice(0, 8)[activeHourlyIndex];
+          renderDetails(hourlyDetailCards(hour, activeDashboardData.details), { preserveAllergenAlerts: true });
+        } else {
+          renderDetails(activeDashboardData.details);
+        }
         if (!elements.pollenPanel.hidden) renderPollenPanel();
       }).catch((error) => console.warn("Supplemental dashboard update skipped.", error));
     }
