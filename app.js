@@ -1313,8 +1313,8 @@ class WeatherService {
 
   mapSummaryStats(current, period, observation, precipitation, airQuality, supplemental) {
     const windValue = this.readObservedWind(observation)
-      || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim()
       || this.formatOpenMeteoWind(supplemental)
+      || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim()
       || "0 mph";
     return [
       { icon: "real-feel.svg", label: "High/Low", value: `${this.formatMaybeTemp(current.high)} / ${this.formatMaybeTemp(current.low)}` },
@@ -1517,7 +1517,7 @@ class WeatherService {
   }
 
   mapDetails(period, observation, precipitation, supplemental) {
-    const wind = this.readObservedWind(observation) || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || this.formatOpenMeteoWind(supplemental) || "0 mph";
+    const wind = this.readObservedWind(observation) || this.formatOpenMeteoWind(supplemental) || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || "0 mph";
     const windGust = this.readWindGust(period, supplemental, observation);
     const humidity = this.readHumidity(observation, supplemental, period);
     const dewPoint = this.dewPointFahrenheit(observation, supplemental);
@@ -2488,8 +2488,18 @@ class WeatherService {
     const speedMeters = this.numberOrNull(observation?.properties?.windSpeed?.value);
     const directionDegrees = this.numberOrNull(observation?.properties?.windDirection?.value);
     if (speedMeters === null) return "";
-    const mph = Math.max(0, Math.round(speedMeters * 2.236936));
+    const mph = Math.max(0, Math.round(this.windSpeedMph(speedMeters, observation?.properties?.windSpeed?.unitCode)));
     return [this.windDirectionLabel(directionDegrees), `${mph} mph`].filter(Boolean).join(" ");
+  }
+
+  windSpeedMph(value, unitCode = "") {
+    const speed = this.numberOrNull(value);
+    if (speed === null) return 0;
+    const unit = String(unitCode).toLowerCase();
+    if (unit.includes("km_h") || unit.includes("km/h") || unit.includes("kilometer")) return speed * 0.621371192;
+    if (unit.includes("knot") || unit.includes("kt")) return speed * 1.15077945;
+    if (unit.includes("mile") || unit.includes("mph")) return speed;
+    return speed * 2.236936;
   }
 
   dewPointFahrenheit(observation, supplemental) {
@@ -2622,7 +2632,7 @@ class WeatherService {
   readWindGust(period, supplemental, observation = null) {
     if (this.isFreshObservation(observation)) {
       const observedGust = this.numberOrNull(observation?.properties?.windGust?.value);
-      if (observedGust !== null) return `${Math.round(observedGust * 2.236936)} mph`;
+      if (observedGust !== null) return `${Math.round(this.windSpeedMph(observedGust, observation?.properties?.windGust?.unitCode))} mph`;
     }
     const gust = this.numberOrNull(supplemental?.windGusts);
     if (gust !== null) return `${Math.round(gust)} mph`;
