@@ -1313,8 +1313,8 @@ class WeatherService {
 
   mapSummaryStats(current, period, observation, precipitation, airQuality, supplemental) {
     const windValue = this.readObservedWind(observation)
-      || this.formatOpenMeteoWind(supplemental)
       || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim()
+      || this.formatOpenMeteoWind(supplemental)
       || "0 mph";
     return [
       { icon: "real-feel.svg", label: "High/Low", value: `${this.formatMaybeTemp(current.high)} / ${this.formatMaybeTemp(current.low)}` },
@@ -1517,7 +1517,7 @@ class WeatherService {
   }
 
   mapDetails(period, observation, precipitation, supplemental) {
-    const wind = this.readObservedWind(observation) || this.formatOpenMeteoWind(supplemental) || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || "0 mph";
+    const wind = this.readObservedWind(observation) || `${period?.windDirection || ""} ${period?.windSpeed || ""}`.trim() || this.formatOpenMeteoWind(supplemental) || "0 mph";
     const windGust = this.readWindGust(period, supplemental, observation);
     const humidity = this.readHumidity(observation, supplemental, period);
     const dewPoint = this.dewPointFahrenheit(observation, supplemental);
