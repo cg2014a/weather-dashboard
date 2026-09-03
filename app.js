@@ -122,12 +122,12 @@ class WeatherService {
 
     const spcOutlooksPromise = this.getSpcOutlooks(location);
     const [forecast, hourly, gridData, alerts, observation, supplemental] = (await Promise.allSettled([
-      properties.forecast ? this.withTimeout(this.fetchJson(properties.forecast), 13000, "NWS forecast") : Promise.resolve(null),
-      properties.forecastHourly ? this.withTimeout(this.fetchJson(properties.forecastHourly), 13000, "NWS hourly forecast") : Promise.resolve(null),
-      properties.forecastGridData ? this.withTimeout(this.fetchJson(properties.forecastGridData), 9000, "NWS grid forecast") : Promise.resolve(null),
-      this.withTimeout(this.fetchJson(nwsAlertsUrl(location)), 9000, "NWS alerts"),
-      properties.observationStations ? this.withTimeout(this.getLatestObservation(properties.observationStations, location), 9000, "NWS observations") : Promise.resolve(null),
-      this.withTimeout(this.getSupplementalWeather(location), 9000, "supplemental weather")
+      properties.forecast ? this.timedRequest("NWS forecast", this.withTimeout(this.fetchJson(properties.forecast), 13000, "NWS forecast")) : Promise.resolve(null),
+      properties.forecastHourly ? this.timedRequest("NWS hourly", this.withTimeout(this.fetchJson(properties.forecastHourly), 13000, "NWS hourly forecast")) : Promise.resolve(null),
+      properties.forecastGridData ? this.timedRequest("NWS grid", this.withTimeout(this.fetchJson(properties.forecastGridData), 9000, "NWS grid forecast")) : Promise.resolve(null),
+      this.timedRequest("NWS alerts", this.withTimeout(this.fetchJson(nwsAlertsUrl(location)), 9000, "NWS alerts")),
+      properties.observationStations ? this.timedRequest("NWS stations/observations", this.withTimeout(this.getLatestObservation(properties.observationStations, location), 9000, "NWS observations")) : Promise.resolve(null),
+      this.timedRequest("Open-Meteo supplemental weather", this.withTimeout(this.getSupplementalWeather(location), 9000, "supplemental weather"))
     ])).map((result) => this.settledValue(result));
 
     const hourlyPeriods = hourly?.properties?.periods || [];
@@ -243,6 +243,13 @@ class WeatherService {
     });
     return Promise.race([promise, timeout])
       .finally(() => window.clearTimeout(timeoutId));
+  }
+
+  timedRequest(label, promise) {
+    const startedAt = performance.now();
+    return Promise.resolve(promise).finally(() => {
+      console.debug(`[SkyStation timing] ${label}: ${(performance.now() - startedAt).toFixed(0)} ms`);
+    });
   }
 
   async resolveLocation(input) {
@@ -3345,7 +3352,8 @@ function renderDetails(details, options = {}) {
     }
     elements.detailsGrid.appendChild(card);
   });
-  if (!options.preserveAllergenAlerts) renderAllergenAlerts(currentPollenDetails, currentHealthDetails);
+  if (options.deferAllergenAlerts) renderAllergenAlerts([], []);
+  else if (!options.preserveAllergenAlerts) renderAllergenAlerts(currentPollenDetails, currentHealthDetails);
 }
 
 function detailsByLabel(details = []) {
@@ -4341,7 +4349,7 @@ async function renderDashboard() {
     syncHourlyMetricControls();
     renderCurrentWeather(data);
     renderSummaryStats(data.summaryStats);
-    renderDetails(data.details);
+    renderDetails(data.details, { deferAllergenAlerts: true });
     renderPrecipitation(data.precipitation);
     renderAlert(data.alert);
     renderHourly(data.hourly);
