@@ -1611,12 +1611,13 @@ class WeatherService {
 
   mapPrecipitation(currentPeriod, hourlyPeriods, supplemental, observation = null) {
     const currentChance = this.precipValue(currentPeriod, supplemental);
-    const currentAmount = this.currentLocalPrecipAmount(supplemental);
+    const latestInterval = this.latestCompletedPrecipInterval(supplemental);
+    const currentAmount = Math.max(this.currentLocalPrecipAmount(supplemental), latestInterval?.amount || 0);
     const shortTerm = this.shortTermPrecipitationSignal(hourlyPeriods, supplemental, currentAmount);
     const localObserved = currentAmount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN;
     const nearbyObserved = this.isNearbyPrecipActivelyOccurring(observation);
     const type = localObserved
-      ? this.localCurrentPrecipType(supplemental, currentPeriod)
+      ? this.localCurrentPrecipType(supplemental, currentPeriod, latestInterval)
       : this.shortTermPrecipType(shortTerm, currentPeriod, hourlyPeriods, supplemental);
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
     const active = localObserved || shortTerm.meaningful;
@@ -2151,7 +2152,9 @@ class WeatherService {
   }
 
   isLocalPrecipActivelyOccurring(period, supplemental) {
-    return this.currentLocalPrecipAmount(supplemental) >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN;
+    const latestInterval = this.latestCompletedPrecipInterval(supplemental);
+    const currentAmount = Math.max(this.currentLocalPrecipAmount(supplemental), latestInterval?.amount || 0);
+    return currentAmount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN;
   }
 
   currentLocalPrecipAmount(supplemental = {}) {
@@ -2184,11 +2187,12 @@ class WeatherService {
     return Date.now() - observedAt <= CURRENT_PRECIP_OBSERVATION_FRESHNESS_MINUTES * 60 * 1000;
   }
 
-  localCurrentPrecipType(supplemental, currentPeriod) {
+  localCurrentPrecipType(supplemental, currentPeriod, latestInterval = null) {
     const snowfall = this.numberOrNull(supplemental?.snowfall) ?? 0;
     if (snowfall >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN) return "Snow";
     const rain = this.firstNumber(supplemental?.rain, supplemental?.showers);
     if (rain !== null && rain >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN) return "Rain";
+    if (latestInterval?.type) return latestInterval.type;
     const forecastText = `${currentPeriod?.shortForecast || ""} ${currentPeriod?.detailedForecast || ""}`;
     return /snow|sleet|ice pellets|rain|showers|drizzle/i.test(forecastText) ? this.precipType(forecastText) : "Precipitation";
   }
@@ -2273,6 +2277,15 @@ class WeatherService {
         type: snowAmount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN ? "Snow" : rainAmount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN ? "Rain" : ""
       };
     });
+  }
+
+  latestCompletedPrecipInterval(supplemental = {}) {
+    return this.precipMinutelyIntervals(supplemental)
+      .filter((interval) => Number.isFinite(interval.minutesFromNow)
+        && interval.minutesFromNow <= 0
+        && interval.minutesFromNow >= -15
+        && interval.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN)
+      .sort((a, b) => b.minutesFromNow - a.minutesFromNow)[0] || null;
   }
 
   openMeteoTimeMs(value, utcOffsetSeconds = 0) {
