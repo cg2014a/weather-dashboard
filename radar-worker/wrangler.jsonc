@@ -1,0 +1,11 @@
+{
+  "name": "skystation-radar",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-10",
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true
+    }
+  }
+}

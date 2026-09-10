@@ -8,6 +8,7 @@ const MORNING_NOTIFICATION_STORAGE_KEY = "skystation-morning-notification";
 const AIRNOW_KEY_STORAGE_KEY = "skystation-airnow-key";
 const PRESSURE_HISTORY_STORAGE_KEY = "skystation-pressure-history";
 const NOTIFICATION_WORKER_URL = "https://skystation-notifications.cgarrett4.workers.dev";
+const RADAR_WORKER_URL = "https://skystation-radar.cgarrett4.workers.dev/api/radar/point";
 const PRECIP_DISPLAY_THRESHOLD = 20;
 const MAX_NEARBY_PRECIP_STATION_MILES = 10;
 const CURRENT_PRECIP_AMOUNT_THRESHOLD_IN = 0.001;
@@ -15,7 +16,6 @@ const CURRENT_PRECIP_OBSERVATION_FRESHNESS_MINUTES = 20;
 const SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD = 40;
 const HOURLY_PRECIP_CHANCE_THRESHOLD = 50;
 const HOURLY_PRECIP_AMOUNT_THRESHOLD_IN = 0.01;
-const PRECIP_CURVE_TENSION = 0.7;
 // SkyStation forecast-impact heuristics. These are not official NWS warning thresholds.
 const FORECAST_HAZARD_THRESHOLDS = Object.freeze({
   windGustImpactMph: 40,
@@ -90,6 +90,7 @@ class WeatherService {
   constructor() {
     this.pendingAirQualityPayloads = new Map();
     this.pendingAtmosporePollenPayloads = new Map();
+    this.pendingIemRadarPayloads = new Map();
   }
 
   async getWeather(location = DEFAULT_LOCATION) {
@@ -157,7 +158,7 @@ class WeatherService {
     const current = this.mapCurrent(currentPeriod, dailyPeriods, hourlyPeriods, observation, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental, observation);
     const currentWind = this.finalizeCurrentWind(currentPeriod, observation, enrichedSupplemental);
-    const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, enrichedSupplemental, spcOutlooksPromise);
+    const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, hourlyPeriods, observation, precipitation, enrichedSupplemental, spcOutlooksPromise);
     const dailyOutlookPromise = spcOutlooksPromise
       .then((spcOutlooks) => this.mapDaily(dailyPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
       .catch((error) => {
@@ -207,7 +208,7 @@ class WeatherService {
     const current = this.mapCurrent(currentPeriod, forecastPeriods, hourlyPeriods, null, enrichedSupplemental);
     const precipitation = this.mapPrecipitation(currentPeriod, hourlyPeriods, enrichedSupplemental, null);
     const currentWind = this.finalizeCurrentWind(currentPeriod, null, enrichedSupplemental);
-    const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, forecastPeriods, null, precipitation, enrichedSupplemental, spcOutlooksPromise);
+    const supplementalUpdatePromise = this.getSupplementalDashboardUpdate(location, currentPeriod, forecastPeriods, hourlyPeriods, null, precipitation, enrichedSupplemental, spcOutlooksPromise);
     const dailyOutlookPromise = spcOutlooksPromise
       .then((spcOutlooks) => this.mapDaily(forecastPeriods, { ...enrichedSupplemental, spcOutlooks: spcOutlooks || [] }))
       .catch((error) => {
@@ -439,14 +440,16 @@ class WeatherService {
     };
   }
 
-  async getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, observation, precipitation, baseSupplemental, spcOutlooksPromise = null) {
+  async getSupplementalDashboardUpdate(location, currentPeriod, dailyPeriods, hourlyPeriods, observation, precipitation, baseSupplemental, spcOutlooksPromise = null) {
     const startDate = this.firstDailyForecastDate(dailyPeriods);
-    const [airQualityResult, atmosporePollenResult] = await Promise.allSettled([
+    const [airQualityResult, atmosporePollenResult, iemRadarResult] = await Promise.allSettled([
       this.withTimeout(this.getAirQuality(location), 5000, "air quality"),
-      this.getAtmosporePollen(location, { startDate, forecastDays: 7 })
+      this.getAtmosporePollen(location, { startDate, forecastDays: 7 }),
+      this.withTimeout(this.getIemRadar(location), 5000, "IEM radar")
     ]);
     const airQuality = this.settledValue(airQualityResult);
     const providerPollen = this.settledValue(atmosporePollenResult);
+    const iemRadar = this.settledValue(iemRadarResult);
     const spcOutlooks = spcOutlooksPromise
       ? await spcOutlooksPromise.catch((error) => {
         console.warn("SPC outlooks unavailable.", error);
@@ -461,6 +464,7 @@ class WeatherService {
       airQualityLabel: airQuality ? `${airQuality.value} ${airQuality.category}` : baseSupplemental.airQualityLabel,
       dailyAirQuality: airQuality?.dailyAirQuality || baseSupplemental.dailyAirQuality || [],
       dailyPollenByDate,
+      iemRadar: iemRadar || baseSupplemental.iemRadar || null,
       spcOutlooks,
       pollen: {
         ...pollen,
@@ -469,8 +473,39 @@ class WeatherService {
     };
     return {
       details: this.mapDetails(currentPeriod, observation, precipitation, updatedSupplemental),
-      daily: this.mapDaily(dailyPeriods, updatedSupplemental)
+      daily: this.mapDaily(dailyPeriods, updatedSupplemental),
+      precipitation: this.mapPrecipitation(currentPeriod, hourlyPeriods, updatedSupplemental, observation)
     };
+  }
+
+  async getIemRadar(location) {
+    const lat = this.numberOrNull(location?.lat);
+    const lon = this.numberOrNull(location?.lon);
+    if (lat === null || lon === null) return null;
+
+    const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+    if (!this.pendingIemRadarPayloads.has(key)) {
+      const url = `${RADAR_WORKER_URL}?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+      const request = this.fetchJson(url, { timeoutMs: 5000 })
+        .then((payload) => this.normalizeIemRadar(payload))
+        .catch((error) => {
+          console.warn("IEM radar unavailable.", error);
+          return null;
+        })
+        .finally(() => this.pendingIemRadarPayloads.delete(key));
+      this.pendingIemRadarPayloads.set(key, request);
+    }
+    return this.pendingIemRadarPayloads.get(key);
+  }
+
+  normalizeIemRadar(payload) {
+    const hasNoEcho = payload?.dbz === null;
+    const dbz = hasNoEcho ? null : this.numberOrNull(payload?.dbz);
+    const validAt = typeof payload?.validAt === "string" ? payload.validAt : "";
+    const validAtMs = validAt ? new Date(validAt).getTime() : NaN;
+    const ageMs = Date.now() - validAtMs;
+    if (!payload?.ok || (!hasNoEcho && dbz === null) || !Number.isFinite(validAtMs) || ageMs < -2 * 60 * 1000 || ageMs > 15 * 60 * 1000) return null;
+    return { source: "iem-n0q", dbz, validAt };
   }
 
   async getOpenMeteoAirQualityPayload(location) {
@@ -1612,12 +1647,13 @@ class WeatherService {
   mapPrecipitation(currentPeriod, hourlyPeriods, supplemental, observation = null) {
     const currentChance = this.precipValue(currentPeriod, supplemental);
     const latestInterval = this.latestCompletedPrecipInterval(supplemental);
-    const currentAmount = Math.max(this.currentLocalPrecipAmount(supplemental), latestInterval?.amount || 0);
+    const currentEvidence = this.currentPrecipitationEvidence(supplemental, latestInterval);
+    const currentAmount = currentEvidence.chartAmount;
     const shortTerm = this.shortTermPrecipitationSignal(hourlyPeriods, supplemental, currentAmount);
-    const localObserved = currentAmount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN;
+    const localObserved = currentEvidence.observed;
     const nearbyObserved = this.isNearbyPrecipActivelyOccurring(observation);
     const type = localObserved
-      ? this.localCurrentPrecipType(supplemental, currentPeriod, latestInterval)
+      ? this.currentPrecipitationType(supplemental, currentPeriod, latestInterval, currentEvidence.source)
       : this.shortTermPrecipType(shortTerm, currentPeriod, hourlyPeriods, supplemental);
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
     const active = localObserved || shortTerm.meaningful;
@@ -1636,6 +1672,8 @@ class WeatherService {
       timeline,
       timelineMode: shortTerm.timelineMode,
       timelineSource: shortTerm.source,
+      currentSource: currentEvidence.source,
+      currentRadarDbz: currentEvidence.source === "iem-n0q" && localObserved ? currentEvidence.radar?.dbz ?? null : null,
       chartMessage: this.precipitationChartMessage({ localObserved, shortTerm, type, currentAmount })
     };
   }
@@ -2153,8 +2191,36 @@ class WeatherService {
 
   isLocalPrecipActivelyOccurring(period, supplemental) {
     const latestInterval = this.latestCompletedPrecipInterval(supplemental);
-    const currentAmount = Math.max(this.currentLocalPrecipAmount(supplemental), latestInterval?.amount || 0);
-    return currentAmount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN;
+    return this.currentPrecipitationEvidence(supplemental, latestInterval).observed;
+  }
+
+  currentPrecipitationEvidence(supplemental = {}, latestInterval = null) {
+    const radar = this.freshIemRadar(supplemental?.iemRadar);
+    const openMeteoAmount = Math.max(this.currentLocalPrecipAmount(supplemental), latestInterval?.amount || 0);
+    if (radar) {
+      return {
+        observed: Number.isFinite(radar.dbz) && radar.dbz >= 30,
+        source: "iem-n0q",
+        radar,
+        // Reflectivity confirms coverage, not a surface accumulation. Keep the chart tied to Open-Meteo amounts.
+        chartAmount: 0
+      };
+    }
+    return {
+      observed: openMeteoAmount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN,
+      source: "open-meteo",
+      radar: null,
+      chartAmount: openMeteoAmount
+    };
+  }
+
+  freshIemRadar(radar) {
+    const hasNoEcho = radar?.dbz === null;
+    const dbz = hasNoEcho ? null : this.numberOrNull(radar?.dbz);
+    const validAt = new Date(radar?.validAt || "").getTime();
+    const ageMs = Date.now() - validAt;
+    if ((!hasNoEcho && dbz === null) || !Number.isFinite(validAt) || ageMs < -2 * 60 * 1000 || ageMs > 15 * 60 * 1000) return null;
+    return { dbz, validAt: radar.validAt };
   }
 
   currentLocalPrecipAmount(supplemental = {}) {
@@ -2195,6 +2261,16 @@ class WeatherService {
     if (latestInterval?.type) return latestInterval.type;
     const forecastText = `${currentPeriod?.shortForecast || ""} ${currentPeriod?.detailedForecast || ""}`;
     return /snow|sleet|ice pellets|rain|showers|drizzle/i.test(forecastText) ? this.precipType(forecastText) : "Precipitation";
+  }
+
+  currentPrecipitationType(supplemental, currentPeriod, latestInterval = null, source = "open-meteo") {
+    if (source !== "iem-n0q") return this.localCurrentPrecipType(supplemental, currentPeriod, latestInterval);
+    const snowfall = this.numberOrNull(supplemental?.snowfall) ?? 0;
+    if (snowfall >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN) return "Snow";
+    const rain = this.firstNumber(supplemental?.rain, supplemental?.showers);
+    if (rain !== null && rain >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN) return "Rain";
+    if (latestInterval?.type) return latestInterval.type;
+    return "Precipitation";
   }
 
   shortTermPrecipType(shortTerm, currentPeriod, hourlyPeriods, supplemental) {
@@ -3538,29 +3614,21 @@ function renderPrecipTimeline(precipitation) {
   const chart = document.createElement("div");
   const title = document.createElement("div");
   const plot = document.createElement("div");
-  const scale = document.createElement("div");
   const bars = document.createElement("div");
   const labels = document.createElement("div");
   const values = normalizeTimeline(precipitation.timeline);
+  if (Number.isFinite(Number(precipitation.currentRadarDbz)) && values.length) {
+    values[0].radarDbz = Number(precipitation.currentRadarDbz);
+  }
 
   chart.className = "precip-timeline";
   title.className = "precip-chart-title";
-  scale.className = "precip-scale";
   plot.className = "precip-plot";
   bars.className = "precip-bars";
   labels.className = "precip-time-labels";
   title.textContent = precipTimelineTitle(precipitation, values);
 
-  const scaleLabels = precipitation.timelineMode === "amount"
-    ? ["High", "Med", "Low", "Drizzle"]
-    : ["100%", "70%", "40%", "20%"];
-  scaleLabels.forEach((level) => {
-    const label = document.createElement("span");
-    label.textContent = level;
-    scale.appendChild(label);
-  });
-
-  bars.appendChild(renderPrecipCurve(values));
+  bars.appendChild(renderPrecipBars(values));
 
   ["Now", "10m", "20m", "30m", "40m", "50m"].forEach((time) => {
     const label = document.createElement("span");
@@ -3568,7 +3636,7 @@ function renderPrecipTimeline(precipitation) {
     labels.appendChild(label);
   });
 
-  plot.append(scale, bars, labels);
+  plot.append(bars, labels);
   chart.append(title, plot);
   return chart;
 }
@@ -3613,64 +3681,53 @@ function normalizeTimeline(values = []) {
   });
 }
 
-function renderPrecipCurve(values) {
-  const anchors = values
-    .map((value, index) => ({ x: index * 5, y: 100 - precipBarHeight(value), source: value.source }))
-    .filter((point, index) => point.source || !values.some((value) => value.source) && index > 0);
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  const area = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  svg.classList.add("precip-curve");
-  svg.setAttribute("viewBox", "0 0 100 100");
-  svg.setAttribute("preserveAspectRatio", "none");
-  svg.setAttribute("aria-hidden", "true");
-
-  if (!anchors.length) return svg;
-  const linePath = smoothPrecipCurvePath(anchors);
-  const first = anchors[0];
-  const last = anchors[anchors.length - 1];
-  area.classList.add("precip-curve-area");
-  area.setAttribute("d", `${linePath} L ${last.x} 100 L ${first.x} 100 Z`);
-  line.classList.add("precip-curve-line");
-  line.setAttribute("d", linePath);
-  svg.append(area, line);
-
-  anchors.forEach((point) => {
-    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    dot.classList.add("precip-curve-point");
-    dot.setAttribute("cx", point.x);
-    dot.setAttribute("cy", point.y);
-    dot.setAttribute("r", "1.7");
-    svg.appendChild(dot);
+function renderPrecipBars(values) {
+  const fragment = document.createDocumentFragment();
+  const heights = precipBarHeights(values);
+  heights.forEach((height) => {
+    const slot = document.createElement("span");
+    slot.className = "precip-bar-slot";
+    if (height > 0) {
+      const bar = document.createElement("span");
+      bar.className = "precip-bar";
+      bar.style.setProperty("--precip-bar-height", `${height}%`);
+      slot.appendChild(bar);
+    }
+    fragment.appendChild(slot);
   });
-  return svg;
+  return fragment;
 }
 
-function smoothPrecipCurvePath(points) {
-  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
-  const slopes = points.slice(0, -1).map((point, index) => (points[index + 1].y - point.y) / (points[index + 1].x - point.x));
-  const tangents = points.map((point, index) => {
-    if (index === 0) return slopes[0];
-    if (index === points.length - 1) return slopes[slopes.length - 1];
-    const previous = slopes[index - 1];
-    const next = slopes[index];
-    return previous * next <= 0 ? 0 : (2 * previous * next) / (previous + next);
-  }).map((tangent) => tangent * PRECIP_CURVE_TENSION);
-  return points.slice(1).reduce((path, point, index) => {
-    const previous = points[index];
-    const width = point.x - previous.x;
-    const controlOneX = previous.x + width / 3;
-    const controlOneY = previous.y + tangents[index] * width / 3;
-    const controlTwoX = point.x - width / 3;
-    const controlTwoY = point.y - tangents[index + 1] * width / 3;
-    return `${path} C ${controlOneX} ${controlOneY} ${controlTwoX} ${controlTwoY} ${point.x} ${point.y}`;
-  }, `M ${points[0].x} ${points[0].y}`);
+function precipBarHeights(values) {
+  const heights = Array.from({ length: values.length }, () => 0);
+  const sourceIndexes = values.reduce((indexes, value, index) => {
+    if (value.source) indexes.push(index);
+    return indexes;
+  }, []);
+  if (!sourceIndexes.length) return values.map((value) => precipDisplayBarHeight(value));
+
+  sourceIndexes.forEach((start, sourceIndex) => {
+    const height = precipDisplayBarHeight(values[start]);
+    if (height <= 0) return;
+    if (start === 0) {
+      heights[0] = height;
+      return;
+    }
+    const nextSource = sourceIndexes[sourceIndex + 1] ?? values.length;
+    const end = Math.min(values.length, start + 6, nextSource);
+    for (let index = start; index < end; index += 1) heights[index] = height;
+  });
+  return heights;
 }
 
-function precipBarHeight(value, index) {
-  if (value.amount !== null && value.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN) return precipAmountBarHeight(value.amount);
-  if (value.chance < PRECIP_DISPLAY_THRESHOLD) return 0;
-  return Math.min(100, value.chance);
+function precipDisplayBarHeight(value) {
+  if (value.amount !== null && value.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN) {
+    return precipAmountBarHeight(value.amount);
+  }
+  if (Number.isFinite(value.radarDbz) && value.radarDbz >= 30) {
+    return Math.min(100, 35 + ((value.radarDbz - 30) / 25) * 65);
+  }
+  return 0;
 }
 
 function precipIntensityFromAmount(amount) {
@@ -4383,6 +4440,10 @@ async function renderDashboard() {
           activeDashboardData.daily = update.daily;
           lastDailyDays = update.daily;
           renderDaily(update.daily);
+        }
+        if (update.precipitation) {
+          activeDashboardData.precipitation = update.precipitation;
+          renderPrecipitation(update.precipitation);
         }
         if (hourlySelectionActive) {
           const hour = getCurrentHourForecast(Array.isArray(activeDashboardData.hourly) ? activeDashboardData.hourly : []).slice(0, 8)[activeHourlyIndex];
