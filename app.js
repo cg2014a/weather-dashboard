@@ -16,6 +16,7 @@ const CURRENT_PRECIP_OBSERVATION_FRESHNESS_MINUTES = 20;
 const SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD = 40;
 const HOURLY_PRECIP_CHANCE_THRESHOLD = 50;
 const HOURLY_PRECIP_AMOUNT_THRESHOLD_IN = 0.01;
+const PRECIP_CURVE_TENSION = 0.7;
 // SkyStation forecast-impact heuristics. These are not official NWS warning thresholds.
 const FORECAST_HAZARD_THRESHOLDS = Object.freeze({
   windGustImpactMph: 40,
@@ -1673,6 +1674,7 @@ class WeatherService {
       timelineMode: shortTerm.timelineMode,
       timelineSource: shortTerm.source,
       currentSource: currentEvidence.source,
+      currentObserved: localObserved,
       currentRadarDbz: currentEvidence.source === "iem-n0q" && localObserved ? currentEvidence.radar?.dbz ?? null : null,
       chartMessage: this.precipitationChartMessage({ localObserved, shortTerm, type, currentAmount })
     };
@@ -3614,6 +3616,7 @@ function renderPrecipTimeline(precipitation) {
   const chart = document.createElement("div");
   const title = document.createElement("div");
   const plot = document.createElement("div");
+  const scale = document.createElement("div");
   const bars = document.createElement("div");
   const labels = document.createElement("div");
   const values = normalizeTimeline(precipitation.timeline);
@@ -3624,11 +3627,22 @@ function renderPrecipTimeline(precipitation) {
   chart.className = "precip-timeline";
   title.className = "precip-chart-title";
   plot.className = "precip-plot";
+  scale.className = "precip-scale";
   bars.className = "precip-bars";
   labels.className = "precip-time-labels";
+
   title.textContent = precipTimelineTitle(precipitation, values);
 
-  bars.appendChild(renderPrecipBars(values));
+  const scaleLabels = precipitation.timelineMode === "amount"
+    ? ["High", "Med", "Low", "Drizzle"]
+    : ["100%", "70%", "40%", "20%"];
+  scaleLabels.forEach((value) => {
+    const label = document.createElement("span");
+    label.textContent = value;
+    scale.appendChild(label);
+  });
+
+  bars.appendChild(renderPrecipCurve(values));
 
   ["Now", "10m", "20m", "30m", "40m", "50m"].forEach((time) => {
     const label = document.createElement("span");
@@ -3636,7 +3650,7 @@ function renderPrecipTimeline(precipitation) {
     labels.appendChild(label);
   });
 
-  plot.append(bars, labels);
+  plot.append(scale, bars, labels);
   chart.append(title, plot);
   return chart;
 }
@@ -3681,53 +3695,63 @@ function normalizeTimeline(values = []) {
   });
 }
 
-function renderPrecipBars(values) {
-  const fragment = document.createDocumentFragment();
-  const heights = precipBarHeights(values);
-  heights.forEach((height) => {
-    const slot = document.createElement("span");
-    slot.className = "precip-bar-slot";
-    if (height > 0) {
-      const bar = document.createElement("span");
-      bar.className = "precip-bar";
-      bar.style.setProperty("--precip-bar-height", `${height}%`);
-      slot.appendChild(bar);
-    }
-    fragment.appendChild(slot);
+function renderPrecipCurve(values) {
+  const anchors = values
+    .map((value, index) => ({ x: index * 5, y: 100 - precipBarHeight(value), source: value.source }))
+    .filter((point, index) => point.source || !values.some((value) => value.source) && index > 0);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const area = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  svg.classList.add("precip-curve");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
+  if (!anchors.length) return svg;
+
+  const linePath = smoothPrecipCurvePath(anchors);
+  const first = anchors[0];
+  const last = anchors[anchors.length - 1];
+  area.classList.add("precip-curve-area");
+  area.setAttribute("d", `${linePath} L ${last.x} 100 L ${first.x} 100 Z`);
+  line.classList.add("precip-curve-line");
+  line.setAttribute("d", linePath);
+  svg.append(area, line);
+  anchors.forEach((point) => {
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.classList.add("precip-curve-point");
+    dot.setAttribute("cx", point.x);
+    dot.setAttribute("cy", point.y);
+    dot.setAttribute("r", "1.7");
+    svg.appendChild(dot);
   });
-  return fragment;
+  return svg;
 }
 
-function precipBarHeights(values) {
-  const heights = Array.from({ length: values.length }, () => 0);
-  const sourceIndexes = values.reduce((indexes, value, index) => {
-    if (value.source) indexes.push(index);
-    return indexes;
-  }, []);
-  if (!sourceIndexes.length) return values.map((value) => precipDisplayBarHeight(value));
-
-  sourceIndexes.forEach((start, sourceIndex) => {
-    const height = precipDisplayBarHeight(values[start]);
-    if (height <= 0) return;
-    if (start === 0) {
-      heights[0] = height;
-      return;
-    }
-    const nextSource = sourceIndexes[sourceIndex + 1] ?? values.length;
-    const end = Math.min(values.length, start + 6, nextSource);
-    for (let index = start; index < end; index += 1) heights[index] = height;
-  });
-  return heights;
+function smoothPrecipCurvePath(points) {
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  const slopes = points.slice(0, -1).map((point, index) => (points[index + 1].y - point.y) / (points[index + 1].x - point.x));
+  const tangents = points.map((point, index) => {
+    if (index === 0) return slopes[0];
+    if (index === points.length - 1) return slopes[slopes.length - 1];
+    const previous = slopes[index - 1];
+    const next = slopes[index];
+    return previous * next <= 0 ? 0 : (2 * previous * next) / (previous + next);
+  }).map((tangent) => tangent * PRECIP_CURVE_TENSION);
+  return points.slice(1).reduce((path, point, index) => {
+    const previous = points[index];
+    const width = point.x - previous.x;
+    const controlOneX = previous.x + width / 3;
+    const controlOneY = previous.y + tangents[index] * width / 3;
+    const controlTwoX = point.x - width / 3;
+    const controlTwoY = point.y - tangents[index + 1] * width / 3;
+    return `${path} C ${controlOneX} ${controlOneY} ${controlTwoX} ${controlTwoY} ${point.x} ${point.y}`;
+  }, `M ${points[0].x} ${points[0].y}`);
 }
 
-function precipDisplayBarHeight(value) {
-  if (value.amount !== null && value.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN) {
-    return precipAmountBarHeight(value.amount);
-  }
-  if (Number.isFinite(value.radarDbz) && value.radarDbz >= 30) {
-    return Math.min(100, 35 + ((value.radarDbz - 30) / 25) * 65);
-  }
-  return 0;
+function precipBarHeight(value) {
+  if (value.amount !== null && value.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN) return precipAmountBarHeight(value.amount);
+  if (value.chance < PRECIP_DISPLAY_THRESHOLD) return 0;
+  return Math.min(100, value.chance);
 }
 
 function precipIntensityFromAmount(amount) {
