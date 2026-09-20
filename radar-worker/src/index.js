@@ -1,7 +1,6 @@
 const IEM_BASE_URL = "https://mesonet.agron.iastate.edu/data/gis/images/4326/USCOMP";
 const IEM_METADATA_URL = `${IEM_BASE_URL}/n0q_0.json`;
-const IEM_WORLD_FILE_URL = `${IEM_BASE_URL}/n0q_0.wld`;
-const IEM_TIFF_URL = `${IEM_BASE_URL}/n0q_0.tif`;
+const IEM_PNG_URL = `${IEM_BASE_URL}/n0q_0.png`;
 const ALLOWED_ORIGINS = new Set([
   "https://cg2014a.github.io",
   "http://localhost:5500"
@@ -9,6 +8,15 @@ const ALLOWED_ORIGINS = new Set([
 const MAX_RADAR_AGE_MS = 15 * 60 * 1000;
 const MAX_FUTURE_SKEW_MS = 2 * 60 * 1000;
 const POINT_CACHE_SECONDS = 60;
+const IEM_WORLD = {
+  pixelWidth: 0.005,
+  pixelHeight: -0.005,
+  originX: -126,
+  originY: 50
+};
+
+let decodedRasterCache = null;
+let decodedRasterPromise = null;
 
 function corsHeaders(origin) {
   return {
@@ -35,69 +43,85 @@ function allowedOrigin(request) {
   return ALLOWED_ORIGINS.has(origin) ? origin : null;
 }
 
-function parseContentRange(value) {
-  const match = String(value || "").match(/^bytes\s+(\d+)-(\d+)\/(\d+)$/i);
-  if (!match) return null;
-  return { start: Number(match[1]), end: Number(match[2]), total: Number(match[3]) };
+function pngChunkType(bytes, offset) {
+  return String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
 }
 
-async function fetchRange(fetcher, url, start, end) {
-  const response = await fetcher(url, {
-    headers: { Range: `bytes=${start}-${end}` },
-    cf: { cacheEverything: true, cacheTtl: POINT_CACHE_SECONDS }
-  });
-  const range = parseContentRange(response.headers.get("Content-Range"));
-  if (response.status !== 206 || !range || range.start !== start) {
-    throw new Error("IEM raster does not support the required byte range.");
-  }
-  return { bytes: new Uint8Array(await response.arrayBuffer()), ...range };
-}
+async function decodeIndexedPng(bytes) {
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (signature.some((value, index) => bytes[index] !== value)) throw new Error("IEM PNG signature is invalid.");
 
-function parseWorldFile(text) {
-  const values = String(text || "")
-    .trim()
-    .split(/\s+/)
-    .map(Number);
-  if (values.length < 6 || values.some((value) => !Number.isFinite(value))) {
-    throw new Error("IEM world file is invalid.");
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  let interlace = 0;
+  const idatParts = [];
+  let offset = signature.length;
+  while (offset + 12 <= bytes.length) {
+    const length = new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0);
+    const type = pngChunkType(bytes, offset);
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + length;
+    if (dataEnd + 4 > bytes.length) throw new Error("IEM PNG chunk is incomplete.");
+    if (type === "IHDR") {
+      const header = new DataView(bytes.buffer, bytes.byteOffset + dataStart, length);
+      width = header.getUint32(0);
+      height = header.getUint32(4);
+      bitDepth = header.getUint8(8);
+      colorType = header.getUint8(9);
+      interlace = header.getUint8(12);
+    } else if (type === "IDAT") {
+      idatParts.push(bytes.subarray(dataStart, dataEnd));
+    }
+    offset = dataEnd + 4;
+    if (type === "IEND") break;
   }
-  const [pixelWidth, rotationY, rotationX, pixelHeight, originX, originY] = values;
-  if (!pixelWidth || !pixelHeight || rotationX !== 0 || rotationY !== 0) {
-    throw new Error("IEM world grid is unsupported.");
-  }
-  return { pixelWidth, pixelHeight, originX, originY };
-}
 
-function readTiffTags(bytes, rangeStart) {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const entryCount = view.getUint16(0, true);
-  const tags = new Map();
-  for (let index = 0; index < entryCount; index += 1) {
-    const offset = 2 + index * 12;
-    if (offset + 12 > bytes.byteLength) throw new Error("IEM TIFF directory is incomplete.");
-    tags.set(view.getUint16(offset, true), {
-      type: view.getUint16(offset + 2, true),
-      count: view.getUint32(offset + 4, true),
-      value: view.getUint32(offset + 8, true)
-    });
+  if (!width || !height || bitDepth !== 8 || colorType !== 3 || interlace !== 0 || !idatParts.length) {
+    throw new Error("IEM PNG raster layout is unsupported.");
   }
-  return { view, rangeStart, tags };
-}
 
-function scalarTag(tags, id) {
-  const tag = tags.get(id);
-  if (!tag || tag.count !== 1) throw new Error(`IEM TIFF tag ${id} is missing.`);
-  return tag.value;
-}
-
-function longArrayFromDirectory(directory, tag) {
-  if (!tag || tag.type !== 4 || !tag.count) throw new Error("IEM TIFF strip table is invalid.");
-  const offset = tag.value - directory.rangeStart;
-  const byteLength = tag.count * 4;
-  if (offset < 0 || offset + byteLength > directory.view.byteLength) {
-    throw new Error("IEM TIFF strip table is outside the directory range.");
+  const compressedLength = idatParts.reduce((total, part) => total + part.length, 0);
+  const compressed = new Uint8Array(compressedLength);
+  let compressedOffset = 0;
+  for (const part of idatParts) {
+    compressed.set(part, compressedOffset);
+    compressedOffset += part.length;
   }
-  return Array.from({ length: tag.count }, (_, index) => directory.view.getUint32(offset + index * 4, true));
+
+  const inflated = new Uint8Array(await new Response(
+    new Blob([compressed]).stream().pipeThrough(new DecompressionStream("deflate"))
+  ).arrayBuffer());
+  const stride = width + 1;
+  if (inflated.length !== stride * height) throw new Error("IEM PNG raster size is invalid.");
+
+  const paeth = (a, b, c) => {
+    const estimate = a + b - c;
+    const distanceA = Math.abs(estimate - a);
+    const distanceB = Math.abs(estimate - b);
+    const distanceC = Math.abs(estimate - c);
+    return distanceA <= distanceB && distanceA <= distanceC ? a : distanceB <= distanceC ? b : c;
+  };
+  for (let y = 0; y < height; y += 1) {
+    const sourceStart = y * stride + 1;
+    const targetStart = y * width;
+    const filter = inflated[sourceStart - 1];
+    for (let x = 0; x < width; x += 1) {
+      const left = x ? inflated[targetStart + x - 1] : 0;
+      const above = y ? inflated[(y - 1) * width + x] : 0;
+      const upperLeft = y && x ? inflated[(y - 1) * width + x - 1] : 0;
+      const value = inflated[sourceStart + x];
+      if (filter === 0) inflated[targetStart + x] = value;
+      else if (filter === 1) inflated[targetStart + x] = (value + left) & 255;
+      else if (filter === 2) inflated[targetStart + x] = (value + above) & 255;
+      else if (filter === 3) inflated[targetStart + x] = (value + Math.floor((left + above) / 2)) & 255;
+      else if (filter === 4) inflated[targetStart + x] = (value + paeth(left, above, upperLeft)) & 255;
+      else throw new Error("IEM PNG filter is unsupported.");
+    }
+  }
+
+  return { width, height, pixels: inflated.subarray(0, width * height) };
 }
 
 function pixelForCoordinate(lat, lon, world, width, height) {
@@ -128,37 +152,24 @@ export async function sampleIemN0q(lat, lon, { fetcher = fetch, now = Date.now()
     throw new Error("IEM radar data is stale.");
   }
 
-  const worldResponse = await fetcher(IEM_WORLD_FILE_URL, {
-    cf: { cacheEverything: true, cacheTtl: POINT_CACHE_SECONDS }
-  });
-  if (!worldResponse.ok) throw new Error("IEM radar grid is unavailable.");
-  const world = parseWorldFile(await worldResponse.text());
-
-  const header = await fetchRange(fetcher, IEM_TIFF_URL, 0, 65535);
-  const headerView = new DataView(header.bytes.buffer, header.bytes.byteOffset, header.bytes.byteLength);
-  if (headerView.getUint16(0, false) !== 0x4949 || headerView.getUint16(2, true) !== 42) {
-    throw new Error("IEM TIFF format is unsupported.");
-  }
-  const directoryOffset = headerView.getUint32(4, true);
-  const directory = await fetchRange(fetcher, IEM_TIFF_URL, directoryOffset, Math.min(directoryOffset + 65535, header.total - 1));
-  const parsed = readTiffTags(directory.bytes, directory.start);
-  const width = scalarTag(parsed.tags, 256);
-  const height = scalarTag(parsed.tags, 257);
-  const compression = scalarTag(parsed.tags, 259);
-  const bitsPerSample = scalarTag(parsed.tags, 258);
-  const samplesPerPixel = scalarTag(parsed.tags, 277);
-  const rowsPerStrip = scalarTag(parsed.tags, 278);
-  if (compression !== 1 || bitsPerSample !== 8 || samplesPerPixel !== 1 || !rowsPerStrip) {
-    throw new Error("IEM TIFF raster layout is unsupported.");
+  if (!decodedRasterCache || decodedRasterCache.validAt !== validAt) {
+    if (!decodedRasterPromise) {
+      decodedRasterPromise = (async () => {
+        const rasterResponse = await fetcher(IEM_PNG_URL, {
+          cf: { cacheEverything: true, cacheTtl: POINT_CACHE_SECONDS }
+        });
+        if (!rasterResponse.ok) throw new Error("IEM PNG raster is unavailable.");
+        return decodeIndexedPng(new Uint8Array(await rasterResponse.arrayBuffer()));
+      })().finally(() => {
+        decodedRasterPromise = null;
+      });
+    }
+    decodedRasterCache = { validAt, ...(await decodedRasterPromise) };
   }
 
-  const stripOffsets = longArrayFromDirectory(parsed, parsed.tags.get(273));
-  const stripIndex = Math.floor(pixelForCoordinate(lat, lon, world, width, height).y / rowsPerStrip);
-  const { x, y } = pixelForCoordinate(lat, lon, world, width, height);
-  if (stripIndex < 0 || stripIndex >= stripOffsets.length) throw new Error("IEM TIFF strip is unavailable.");
-  const byteOffset = stripOffsets[stripIndex] + (y % rowsPerStrip) * width + x;
-  const pixel = await fetchRange(fetcher, IEM_TIFF_URL, byteOffset, byteOffset);
-  const index = pixel.bytes[0];
+  const { width, height, pixels } = decodedRasterCache;
+  const { x, y } = pixelForCoordinate(lat, lon, IEM_WORLD, width, height);
+  const index = pixels[y * width + x];
 
   return {
     ok: true,
