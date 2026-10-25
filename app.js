@@ -3018,14 +3018,20 @@ function loadLayout() {
 
 function applyLayout(layout) {
   selectedLayout = layout === "modern" ? "modern" : "classic";
-  document.documentElement.classList.toggle("layout-modern", selectedLayout === "modern");
-  document.documentElement.classList.toggle("layout-classic", selectedLayout === "classic");
+  const isModern = selectedLayout === "modern";
+  document.documentElement.classList.toggle("layout-modern", isModern);
+  document.documentElement.classList.toggle("layout-classic", !isModern);
+  document.documentElement.classList.toggle("theme-dark", !isModern && selectedTheme === "dark");
   if (elements.currentOutlook) {
-    if (selectedLayout === "modern") {
+    if (isModern) {
       elements.dailyForecast?.closest(".seven-day")?.after(elements.currentOutlook);
     } else {
       elements.expandedWeather?.before(elements.currentOutlook);
     }
+  }
+  const shouldUseHorizontalDaily = !isModern && dailyLayoutMode === "horizontal";
+  if (elements.dailyForecast && elements.dailyForecast.classList.contains("is-horizontal") !== shouldUseHorizontalDaily) {
+    renderDaily(lastDailyDays);
   }
   if (elements.layoutClassic) elements.layoutClassic.checked = selectedLayout === "classic";
   if (elements.layoutModern) elements.layoutModern.checked = selectedLayout === "modern";
@@ -4056,8 +4062,8 @@ function setActiveHourly(index) {
 function renderDaily(days) {
   lastDailyDays = Array.isArray(days) ? days : [];
   elements.dailyForecast.replaceChildren();
-  elements.dailyForecast.classList.toggle("is-horizontal", dailyLayoutMode === "horizontal");
-  const isHorizontal = dailyLayoutMode === "horizontal";
+  const isHorizontal = selectedLayout !== "modern" && dailyLayoutMode === "horizontal";
+  elements.dailyForecast.classList.toggle("is-horizontal", isHorizontal);
   const horizontalPanels = [];
   const lowValues = days.map((day) => safeNumber(day.low)).filter(Number.isFinite);
   const highValues = days.map((day) => safeNumber(day.high)).filter(Number.isFinite);

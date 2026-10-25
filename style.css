@@ -609,6 +609,8 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .location-toggle { border-color: rgba(142, 191, 225, .3); background: rgba(241, 248, 255, .72); }
 :root.layout-modern.theme-dark .theme-setting,
 :root.layout-modern.theme-dark .location-toggle { background: rgba(16, 43, 70, .82); }
+:root.layout-modern #themeSetting,
+:root.layout-modern #dailyLayoutSetting { display: none !important; }
 @media (max-width: 560px) {
   :root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr) minmax(142px, 43vw); gap: 8px; padding: 24px 13px 8px; }
   :root.layout-modern .hero-icon { width: 62px; height: 62px; }
