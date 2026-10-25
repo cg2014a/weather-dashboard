@@ -3020,6 +3020,13 @@ function applyLayout(layout) {
   selectedLayout = layout === "modern" ? "modern" : "classic";
   document.documentElement.classList.toggle("layout-modern", selectedLayout === "modern");
   document.documentElement.classList.toggle("layout-classic", selectedLayout === "classic");
+  if (elements.currentOutlook) {
+    if (selectedLayout === "modern") {
+      elements.dailyForecast?.closest(".seven-day")?.after(elements.currentOutlook);
+    } else {
+      elements.expandedWeather?.before(elements.currentOutlook);
+    }
+  }
   if (elements.layoutClassic) elements.layoutClassic.checked = selectedLayout === "classic";
   if (elements.layoutModern) elements.layoutModern.checked = selectedLayout === "modern";
 }
@@ -3360,7 +3367,7 @@ function cacheElements() {
   [
     "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
-    "condition", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
+    "condition", "currentOutlook", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
     "expandedWeather", "currentNarrative", "radarPreviewCard", "radarPreviewFrame", "radarFrame", "radarPreviewLabel", "radarPanelLabel", "radarToggle", "radarPanel", "radarClose", "radarTime",
     "pollenPanel", "pollenClose", "pollenList", "pollenSummary"
