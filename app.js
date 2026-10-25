@@ -3042,8 +3042,11 @@ function applyLayout(layout) {
   if (elements.currentOutlook) {
     if (isModern) {
       const sevenDay = elements.dailyForecast?.closest(".seven-day");
-      sevenDay?.after(elements.currentOutlook);
-      sevenDay?.before(elements.precipCard);
+      const dashboard = sevenDay?.parentElement;
+      if (sevenDay && dashboard) {
+        dashboard.insertBefore(elements.precipCard, sevenDay);
+        dashboard.insertBefore(elements.currentOutlook, sevenDay.nextSibling);
+      }
     } else {
       elements.expandedWeather?.before(elements.currentOutlook);
       elements.alertCard?.after(elements.precipCard);
