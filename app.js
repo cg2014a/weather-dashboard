@@ -1677,6 +1677,10 @@ class WeatherService {
       timelineSource: shortTerm.source,
       currentSource: currentEvidence.source,
       currentObserved: localObserved,
+      arrivalMinutes: shortTerm.arrivalMinutes,
+      futureMeaningful: shortTerm.futureMeaningful,
+      futureHasAmounts: shortTerm.futureHasAmounts,
+      currentAmount,
       currentRadarDbz: currentEvidence.source === "iem-n0q" && localObserved ? currentEvidence.radar?.dbz ?? null : null,
       chartMessage: this.precipitationChartMessage({ localObserved, shortTerm, type, currentAmount })
     };
@@ -3037,7 +3041,7 @@ function applyLayout(layout) {
   document.documentElement.classList.toggle("theme-dark", selectedTheme === "dark");
   if (elements.currentOutlook) {
     if (isModern) {
-      elements.dailyForecast?.closest(".seven-day")?.after(elements.currentOutlook);
+      elements.dailyForecast?.closest(".seven-day")?.before(elements.currentOutlook);
       elements.currentOutlook.after(elements.precipCard);
     } else {
       elements.expandedWeather?.before(elements.currentOutlook);
@@ -3699,9 +3703,60 @@ function renderPrecipitation(precipitation) {
   setText("precipSummary", precipitation.summary);
   elements.precipAmounts.replaceChildren();
 
-  if (selectedLayout !== "modern") {
-    elements.precipAmounts.appendChild(renderPrecipTimeline(precipitation));
+  elements.precipAmounts.appendChild(
+    selectedLayout === "modern"
+      ? renderModernPrecipitationChips(precipitation)
+      : renderPrecipTimeline(precipitation)
+  );
+}
+
+function renderModernPrecipitationChips(precipitation) {
+  const chips = document.createElement("div");
+  chips.className = "modern-precip-chips";
+
+  const addChip = (label, value) => {
+    const chip = document.createElement("div");
+    chip.className = "modern-precip-chip";
+    const chipLabel = document.createElement("span");
+    const chipValue = document.createElement("strong");
+    chipLabel.textContent = label;
+    chipValue.textContent = value;
+    chip.append(chipLabel, chipValue);
+    chips.appendChild(chip);
+  };
+
+  addChip("Timing", modernPrecipitationTiming(precipitation));
+  addChip("Intensity", modernPrecipitationIntensity(precipitation));
+  addChip("Duration", modernPrecipitationDuration(precipitation));
+  return chips;
+}
+
+function modernPrecipitationTiming(precipitation) {
+  if (precipitation.currentObserved) return "Now";
+  const minutes = Number(precipitation.arrivalMinutes);
+  if (!Number.isFinite(minutes)) return "Within hour";
+  if (minutes <= 15) return "~15 min";
+  return `~${Math.round(minutes / 15) * 15} min`;
+}
+
+function modernPrecipitationIntensity(precipitation) {
+  const type = precipitation.type || "Precipitation";
+  if (type === "Sleet") return "Mixed";
+  const amount = Number(precipitation.currentAmount);
+  const intensity = Number.isFinite(amount) ? precipIntensityFromAmount(amount) : "Dry";
+  if (intensity !== "Dry") return type === "Snow" ? `${intensity} Snow` : intensity;
+  return type === "Sleet" ? "Mixed" : type;
+}
+
+function modernPrecipitationDuration(precipitation) {
+  if (precipitation.currentObserved) {
+    if (precipitation.timelineSource === "minutely") {
+      if (precipitation.futureMeaningful && precipitation.futureHasAmounts) return "Continuing";
+      if (!precipitation.futureMeaningful) return "Ending soon";
+    }
+    return "Within hour";
   }
+  return Number.isFinite(Number(precipitation.arrivalMinutes)) ? "Short-lived" : "Within hour";
 }
 
 function renderPrecipTimeline(precipitation) {

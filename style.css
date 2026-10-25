@@ -568,6 +568,7 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .weather-shell { gap: 14px; width: min(100%, 700px); }
 :root.layout-modern .app-kicker,
 :root.layout-modern .source-footer { color: var(--modern-text-muted); text-shadow: 0 1px 10px rgba(4, 30, 55, .26); }
+:root.layout-modern:not(.theme-dark) .app-kicker { color: var(--modern-text); }
 :root.layout-modern .settings-button { width: 28px; height: 28px; background: rgba(247, 250, 252, .12); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .2); }
 :root.layout-modern .settings-button img { filter: brightness(0) invert(1); opacity: 1; }
 :root.layout-modern .current-card,
@@ -615,6 +616,11 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .precip-card p,
 :root.layout-modern .precip-scale,
 :root.layout-modern .precip-time-labels { color: var(--modern-text-muted); }
+:root.layout-modern .precip-amounts { padding-top: 12px; }
+:root.layout-modern .modern-precip-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+:root.layout-modern .modern-precip-chip { display: grid; gap: 3px; min-width: 0; padding: 9px 8px; border: 1px solid rgba(219, 236, 248, .13); border-radius: 12px; background: rgba(7, 29, 49, .24); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .07); }
+:root.layout-modern .modern-precip-chip span { color: var(--modern-text-dim); font-size: .57rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+:root.layout-modern .modern-precip-chip strong { overflow: hidden; color: var(--modern-text); font-size: .72rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 :root.layout-modern .precip-chart-title { color: var(--modern-accent); }
 :root.layout-modern .precip-bars { border-bottom-color: rgba(184, 201, 216, .28); background-image: linear-gradient(to bottom, rgba(54, 169, 225, .16) 1px, transparent 1px), linear-gradient(to right, rgba(54, 169, 225, .16) 1px, transparent 1px), linear-gradient(to right, rgba(54, 169, 225, .08) 1px, transparent 1px); }
 :root.layout-modern .precip-curve-area { fill: rgba(54, 169, 225, .2); }
@@ -727,6 +733,9 @@ body.pollen-open { overflow: hidden; }
   :root.layout-modern .daily-list:not(.is-horizontal) .daily-day-card { flex-basis: 122px; }
   :root.layout-modern .radar-preview-heading { gap: 8px; }
   :root.layout-modern .radar-preview-heading p { overflow-wrap: anywhere; }
+  :root.layout-modern .modern-precip-chips { gap: 6px; }
+  :root.layout-modern .modern-precip-chip { padding: 8px 6px; }
+  :root.layout-modern .modern-precip-chip strong { font-size: .67rem; }
 }
 
 
