@@ -693,6 +693,15 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .location-toggle small { color: var(--modern-text-muted); }
 :root.layout-modern .location-toggle strong,
 :root.layout-modern .theme-setting-label { color: var(--modern-text); }
+:root.layout-modern .theme-control { border-color: var(--modern-border); background: rgba(5, 29, 50, .54); }
+:root.layout-modern .theme-control label { color: var(--modern-text-muted); }
+:root.layout-modern .theme-control input:checked + label { background: var(--modern-accent); color: var(--modern-text); }
+:root.layout-modern .settings-heading button,
+:root.layout-modern .use-my-location,
+:root.layout-modern .notification-test-control button { border: 1px solid var(--modern-border); background: rgba(247, 250, 252, .12); color: var(--modern-text); }
+:root.layout-modern .location-entry input { border-color: var(--modern-border); background: rgba(5, 29, 50, .54); color: var(--modern-text); }
+:root.layout-modern .location-entry input::placeholder { color: var(--modern-text-dim); }
+:root.layout-modern .location-entry button { background: var(--modern-accent); color: var(--modern-text); }
 @media (max-width: 560px) {
   :root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr) minmax(142px, 43vw); gap: 8px; padding: 24px 13px 8px; }
   :root.layout-modern .hero-icon { width: 62px; height: 62px; }

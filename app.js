@@ -2979,6 +2979,19 @@ function loadDailyLayoutMode() {
   }
 }
 
+function hasSavedDailyLayoutMode() {
+  try {
+    const saved = localStorage.getItem(DAILY_LAYOUT_STORAGE_KEY);
+    return saved === "horizontal" || saved === "vertical";
+  } catch {
+    return false;
+  }
+}
+
+function usesHorizontalDailyLayout() {
+  return dailyLayoutMode === "horizontal" || (selectedLayout === "modern" && !hasSavedDailyLayoutMode());
+}
+
 function saveDailyLayoutMode(value) {
   dailyLayoutMode = value === "horizontal" ? "horizontal" : "vertical";
   localStorage.setItem(DAILY_LAYOUT_STORAGE_KEY, dailyLayoutMode);
@@ -3029,7 +3042,7 @@ function applyLayout(layout) {
       elements.expandedWeather?.before(elements.currentOutlook);
     }
   }
-  const shouldUseHorizontalDaily = dailyLayoutMode === "horizontal";
+  const shouldUseHorizontalDaily = usesHorizontalDailyLayout();
   if (elements.dailyForecast && elements.dailyForecast.classList.contains("is-horizontal") !== shouldUseHorizontalDaily) {
     renderDaily(lastDailyDays);
   }
@@ -4062,7 +4075,7 @@ function setActiveHourly(index) {
 function renderDaily(days) {
   lastDailyDays = Array.isArray(days) ? days : [];
   elements.dailyForecast.replaceChildren();
-  const isHorizontal = dailyLayoutMode === "horizontal";
+  const isHorizontal = usesHorizontalDailyLayout();
   elements.dailyForecast.classList.toggle("is-horizontal", isHorizontal);
   const horizontalPanels = [];
   const lowValues = days.map((day) => safeNumber(day.low)).filter(Number.isFinite);
@@ -4090,7 +4103,7 @@ function renderDaily(days) {
 
     card.className = "daily-day-card";
     row.className = "daily-row";
-    if (dailyLayoutMode === "horizontal") row.classList.add("daily-chart-day");
+    if (isHorizontal) row.classList.add("daily-chart-day");
     row.type = "button";
     row.id = `dailyRow${index}`;
     row.style.animationDelay = `${index * 45}ms`;
@@ -4370,7 +4383,7 @@ function toggleSettings(force) {
   elements.settingsToggle.setAttribute("aria-expanded", String(shouldOpen));
   if (shouldOpen) {
     if (elements.autoLocationToggle) elements.autoLocationToggle.checked = autoLocationEnabled;
-    if (elements.dailyLayoutToggle) elements.dailyLayoutToggle.checked = dailyLayoutMode === "horizontal";
+    if (elements.dailyLayoutToggle) elements.dailyLayoutToggle.checked = usesHorizontalDailyLayout();
     applyTheme(selectedTheme);
     applyLayout(selectedLayout);
     refreshMorningNotificationState();
@@ -4452,7 +4465,7 @@ function bindInteractions() {
   });
   elements.dailyLayoutToggle.addEventListener("change", () => {
     saveDailyLayoutMode(elements.dailyLayoutToggle.checked ? "horizontal" : "vertical");
-    elements.dailyForecast.classList.toggle("is-horizontal", dailyLayoutMode === "horizontal");
+    elements.dailyForecast.classList.toggle("is-horizontal", usesHorizontalDailyLayout());
     renderDaily(lastDailyDays);
     elements.locationStatus.textContent = dailyLayoutMode === "horizontal"
       ? "7-Day Forecast is using the horizontal chart view."
