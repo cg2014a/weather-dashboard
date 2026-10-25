@@ -144,7 +144,7 @@
           <label class="location-toggle">
             <span>
               <strong>Use Current Location</strong>
-              <small>Automatically detect this device when the dashboard loads or refreshes.</small>
+              <small>Detect this device on the first launch when no location is saved.</small>
             </span>
             <input id="autoLocationToggle" type="checkbox" checked />
             <span class="toggle-track" aria-hidden="true"></span>
@@ -154,6 +154,7 @@
             <input id="locationInput" name="location" type="text" autocomplete="postal-code" placeholder="66062 or Kansas City, MO" />
             <button type="submit">Update</button>
           </div>
+          <button id="useMyLocation" class="use-my-location" type="button">Use My Location</button>
           <p id="locationStatus" class="location-status" role="status"></p>
         </section>
         <section class="settings-group" aria-labelledby="dashboardSettingsHeading">

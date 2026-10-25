@@ -2,6 +2,7 @@ const ICON_PATH = "icons/";
 const DEFAULT_LOCATION = { label: "Olathe, KS", query: "Olathe, KS", city: "Olathe", state: "KS", lat: 38.9, lon: -94.84 };
 const LOCATION_STORAGE_KEY = "skystation-location";
 const AUTO_LOCATION_STORAGE_KEY = "skystation-auto-location";
+const LOCATION_REQUESTED_STORAGE_KEY = "skystation-location-requested";
 const DAILY_LAYOUT_STORAGE_KEY = "skystation-daily-layout";
 const THEME_STORAGE_KEY = "skystation-theme";
 const MORNING_NOTIFICATION_STORAGE_KEY = "skystation-morning-notification";
@@ -2929,6 +2930,31 @@ function loadSavedLocation() {
   }
 }
 
+function hasSavedLocation() {
+  try {
+    return isValidLocation(JSON.parse(localStorage.getItem(LOCATION_STORAGE_KEY)));
+  } catch {
+    return false;
+  }
+}
+
+function hasRequestedDeviceLocation() {
+  try {
+    return localStorage.getItem(LOCATION_REQUESTED_STORAGE_KEY) === "true";
+  } catch {
+    return true;
+  }
+}
+
+function markDeviceLocationRequested() {
+  try {
+    localStorage.setItem(LOCATION_REQUESTED_STORAGE_KEY, "true");
+  } catch {
+    // Without persistent storage, avoid repeating permission requests during this session.
+    autoLocationEnabled = false;
+  }
+}
+
 function loadAutoLocationEnabled() {
   try {
     const saved = localStorage.getItem(AUTO_LOCATION_STORAGE_KEY);
@@ -3241,8 +3267,8 @@ function deviceLocationSupported() {
   return Boolean(navigator.geolocation?.getCurrentPosition);
 }
 
-function getDeviceLocation() {
-  if (!autoLocationEnabled || !deviceLocationSupported()) return Promise.resolve(null);
+function getDeviceLocation({ userInitiated = false } = {}) {
+  if ((!userInitiated && !autoLocationEnabled) || !deviceLocationSupported()) return Promise.resolve(null);
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -3269,9 +3295,15 @@ function getDeviceLocation() {
 }
 
 async function locationForDashboard() {
-  if (!autoLocationEnabled) return isValidLocation(currentLocation) ? currentLocation : DEFAULT_LOCATION;
+  if (hasSavedLocation()) return currentLocation;
+  if (!autoLocationEnabled || hasRequestedDeviceLocation()) return isValidLocation(currentLocation) ? currentLocation : DEFAULT_LOCATION;
+  markDeviceLocationRequested();
   const detectedLocation = await getDeviceLocation();
-  return isValidLocation(detectedLocation) ? detectedLocation : (isValidLocation(currentLocation) ? currentLocation : DEFAULT_LOCATION);
+  if (isValidLocation(detectedLocation)) {
+    saveLocation(detectedLocation);
+    return detectedLocation;
+  }
+  return isValidLocation(currentLocation) ? currentLocation : DEFAULT_LOCATION;
 }
 
 function saveLocation(location) {
@@ -3299,7 +3331,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
@@ -4325,6 +4357,20 @@ async function handleLocationSubmit(event) {
   }
 }
 
+async function handleUseMyLocation() {
+  const requestId = ++locationRequestId;
+  elements.locationStatus.textContent = "Getting your current location...";
+  const location = await getDeviceLocation({ userInitiated: true });
+  if (requestId !== locationRequestId) return;
+  if (!isValidLocation(location)) {
+    elements.locationStatus.textContent = "Unable to get your current location. Check location permission and try again.";
+    return;
+  }
+  saveLocation(location);
+  toggleSettings(false);
+  await renderDashboard();
+}
+
 function bindInteractions() {
   elements.currentCard.addEventListener("click", (event) => {
     if (event.target.closest("#hourlyForecast") || event.target.closest(".hourly-metric-toggle")) return;
@@ -4360,7 +4406,7 @@ function bindInteractions() {
   elements.autoLocationToggle.addEventListener("change", () => {
     saveAutoLocationEnabled(elements.autoLocationToggle.checked);
     elements.locationStatus.textContent = autoLocationEnabled
-      ? "Current location will be used on load and refresh if allowed."
+      ? "Current location may be used on the first launch. Use the button below to refresh it later."
       : "Automatic location is off. The ZIP or city above will be used.";
   });
   elements.dailyLayoutToggle.addEventListener("change", () => {
@@ -4382,6 +4428,7 @@ function bindInteractions() {
   elements.sendTestNotification.addEventListener("click", sendTestNotification);
   elements.sendActiveNwsAlertTestNotification.addEventListener("click", sendActiveNwsAlertTestNotification);
   elements.locationForm.addEventListener("submit", handleLocationSubmit);
+  elements.useMyLocation.addEventListener("click", handleUseMyLocation);
   bindPullToRefresh();
 }
 
