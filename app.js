@@ -3041,8 +3041,9 @@ function applyLayout(layout) {
   document.documentElement.classList.toggle("theme-dark", selectedTheme === "dark");
   if (elements.currentOutlook) {
     if (isModern) {
-      elements.dailyForecast?.closest(".seven-day")?.before(elements.currentOutlook);
-      elements.currentOutlook.after(elements.precipCard);
+      const sevenDay = elements.dailyForecast?.closest(".seven-day");
+      sevenDay?.after(elements.currentOutlook);
+      sevenDay?.before(elements.precipCard);
     } else {
       elements.expandedWeather?.before(elements.currentOutlook);
       elements.alertCard?.after(elements.precipCard);
