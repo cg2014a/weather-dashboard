@@ -3021,7 +3021,7 @@ function applyLayout(layout) {
   const isModern = selectedLayout === "modern";
   document.documentElement.classList.toggle("layout-modern", isModern);
   document.documentElement.classList.toggle("layout-classic", !isModern);
-  document.documentElement.classList.toggle("theme-dark", !isModern && selectedTheme === "dark");
+  document.documentElement.classList.toggle("theme-dark", selectedTheme === "dark");
   if (elements.currentOutlook) {
     if (isModern) {
       elements.dailyForecast?.closest(".seven-day")?.after(elements.currentOutlook);
@@ -3029,7 +3029,7 @@ function applyLayout(layout) {
       elements.expandedWeather?.before(elements.currentOutlook);
     }
   }
-  const shouldUseHorizontalDaily = !isModern && dailyLayoutMode === "horizontal";
+  const shouldUseHorizontalDaily = dailyLayoutMode === "horizontal";
   if (elements.dailyForecast && elements.dailyForecast.classList.contains("is-horizontal") !== shouldUseHorizontalDaily) {
     renderDaily(lastDailyDays);
   }
@@ -4062,7 +4062,7 @@ function setActiveHourly(index) {
 function renderDaily(days) {
   lastDailyDays = Array.isArray(days) ? days : [];
   elements.dailyForecast.replaceChildren();
-  const isHorizontal = selectedLayout !== "modern" && dailyLayoutMode === "horizontal";
+  const isHorizontal = dailyLayoutMode === "horizontal";
   elements.dailyForecast.classList.toggle("is-horizontal", isHorizontal);
   const horizontalPanels = [];
   const lowValues = days.map((day) => safeNumber(day.low)).filter(Number.isFinite);
