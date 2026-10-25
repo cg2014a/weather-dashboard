@@ -3044,6 +3044,9 @@ function applyLayout(layout) {
       elements.alertCard?.after(elements.precipCard);
     }
   }
+  if (activeDashboardData?.precipitation) {
+    renderPrecipitation(activeDashboardData.precipitation);
+  }
   const shouldUseHorizontalDaily = usesHorizontalDailyLayout();
   if (elements.dailyForecast && elements.dailyForecast.classList.contains("is-horizontal") !== shouldUseHorizontalDaily) {
     renderDaily(lastDailyDays);
@@ -3696,7 +3699,9 @@ function renderPrecipitation(precipitation) {
   setText("precipSummary", precipitation.summary);
   elements.precipAmounts.replaceChildren();
 
-  elements.precipAmounts.appendChild(renderPrecipTimeline(precipitation));
+  if (selectedLayout !== "modern") {
+    elements.precipAmounts.appendChild(renderPrecipTimeline(precipitation));
+  }
 }
 
 function renderPrecipTimeline(precipitation) {
