@@ -3038,8 +3038,10 @@ function applyLayout(layout) {
   if (elements.currentOutlook) {
     if (isModern) {
       elements.dailyForecast?.closest(".seven-day")?.after(elements.currentOutlook);
+      elements.currentOutlook.after(elements.precipCard);
     } else {
       elements.expandedWeather?.before(elements.currentOutlook);
+      elements.alertCard?.after(elements.precipCard);
     }
   }
   const shouldUseHorizontalDaily = usesHorizontalDailyLayout();

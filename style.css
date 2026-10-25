@@ -608,11 +608,14 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .quick-label,
 :root.layout-modern .sun-times span { color: var(--modern-text-dim); }
 :root.layout-modern .sun-times strong { color: var(--modern-text); }
-:root.layout-modern .precip-card { padding: 15px 16px; }
+:root.layout-modern .precip-card { grid-template-columns: 1fr; gap: 0; padding: 15px 16px; }
+:root.layout-modern .precip-card-main { grid-template-columns: 40px minmax(0, 1fr); gap: 12px; align-items: center; }
+:root.layout-modern .precip-card-main img { width: 40px; height: 40px; }
 :root.layout-modern .precip-card h2 { color: var(--modern-text); }
 :root.layout-modern .precip-card p,
 :root.layout-modern .precip-scale,
 :root.layout-modern .precip-time-labels { color: var(--modern-text-muted); }
+:root.layout-modern .precip-card .precip-amounts { display: none; }
 :root.layout-modern .precip-chart-title { color: var(--modern-accent); }
 :root.layout-modern .precip-bars { border-bottom-color: rgba(184, 201, 216, .28); background-image: linear-gradient(to bottom, rgba(54, 169, 225, .16) 1px, transparent 1px), linear-gradient(to right, rgba(54, 169, 225, .16) 1px, transparent 1px), linear-gradient(to right, rgba(54, 169, 225, .08) 1px, transparent 1px); }
 :root.layout-modern .precip-curve-area { fill: rgba(54, 169, 225, .2); }
