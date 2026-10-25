@@ -626,6 +626,11 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .hourly-time-label,
 :root.layout-modern .hourly-wind-direction { color: var(--modern-text-muted); }
 :root.layout-modern .hourly-precip-label { color: var(--modern-rain); }
+:root.layout-modern .hourly-precip-label.is-wind-mode,
+:root.layout-modern .hourly-wind-label { color: var(--modern-text-muted); }
+:root.layout-modern .hourly-wind-label.is-muted-metric { color: var(--modern-rain); }
+:root.layout-modern .hourly-metric-toggle button { color: var(--modern-text-muted); }
+:root.layout-modern .hourly-metric-toggle button.is-active { background: rgba(47, 156, 244, .2); color: var(--modern-text); box-shadow: inset 0 0 0 1px rgba(47, 156, 244, .42); }
 :root.layout-modern .hourly-temp-bar { border-color: rgba(247, 250, 252, .72); background: linear-gradient(90deg, var(--modern-warm), var(--modern-warm-soft)); }
 :root.layout-modern .section-heading h2,
 :root.layout-modern .radar-preview-heading h2 { letter-spacing: -.02em; }
