@@ -568,7 +568,10 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .weather-shell { gap: 14px; width: min(100%, 700px); }
 :root.layout-modern .app-kicker,
 :root.layout-modern .source-footer { color: var(--modern-text-muted); text-shadow: 0 1px 10px rgba(4, 30, 55, .26); }
-:root.layout-modern:not(.theme-dark) .app-kicker { color: var(--modern-text); }
+:root.layout-modern:not(.theme-dark) .app-kicker,
+:root.layout-modern:not(.theme-dark) .app-kicker span,
+:root.layout-modern:not(.theme-dark) .app-kicker time { color: #ffffff; }
+:root.layout-modern:not(.theme-dark) .settings-button { color: #ffffff; }
 :root.layout-modern .settings-button { width: 28px; height: 28px; background: rgba(247, 250, 252, .12); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .2); }
 :root.layout-modern .settings-button img { filter: brightness(0) invert(1); opacity: 1; }
 :root.layout-modern .current-card,
