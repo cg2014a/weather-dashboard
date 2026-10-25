@@ -649,7 +649,6 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .section-heading h2,
 :root.layout-modern .radar-preview-heading h2 { letter-spacing: -.02em; }
 :root.layout-modern .seven-day .daily-heading { display: none; }
-:root.layout-modern .seven-day { padding-top: 4px; }
 :root.layout-modern .current-outlook { margin: 0; padding: 15px 16px; border: 1px solid var(--modern-border); border-radius: 20px; box-shadow: var(--shadow), inset 0 1px 0 rgba(247, 250, 252, .1); }
 :root.layout-modern .daily-list:not(.is-horizontal) { display: flex; gap: 10px; overflow-x: auto; padding: 2px 1px 7px; scroll-snap-type: x proximity; scrollbar-width: none; }
 :root.layout-modern .daily-list:not(.is-horizontal)::-webkit-scrollbar { display: none; }
