@@ -4481,7 +4481,10 @@ function bindInteractions() {
     if (elements.layoutClassic.checked) saveLayout("classic");
   });
   elements.layoutModern.addEventListener("change", () => {
-    if (elements.layoutModern.checked) saveLayout("modern");
+    if (elements.layoutModern.checked) {
+      saveDailyLayoutMode("horizontal");
+      saveLayout("modern");
+    }
   });
   elements.morningNotificationToggle.addEventListener("change", handleMorningNotificationToggle);
   elements.severeAlertsToggle.addEventListener("change", handleSevereAlertsToggle);

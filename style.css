@@ -663,6 +663,10 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .daily-row[aria-expanded="true"] { background: rgba(47, 156, 244, .12); }
 :root.layout-modern .daily-day-card.is-open,
 :root.layout-modern .daily-day-card.is-open .daily-detail-panel { border-color: var(--modern-border); }
+:root.layout-modern .day-designation-notice { border-color: var(--modern-border); background: rgba(10, 38, 62, .78); color: var(--modern-text); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .1); }
+:root.layout-modern .day-designation-notice.alert { background: rgba(112, 37, 42, .78); }
+:root.layout-modern .day-designation-notice.impact { background: rgba(104, 71, 20, .78); }
+:root.layout-modern .day-designation-notice .day-designation.impact { border-color: rgba(255, 181, 27, .5); background: #b77a10; color: var(--modern-text); }
 :root.layout-modern .story-block,
 :root.layout-modern .day-metrics,
 :root.layout-modern .day-metric { border-color: var(--modern-border); background: rgba(13, 46, 72, .56); }
