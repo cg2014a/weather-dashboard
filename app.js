@@ -5,6 +5,7 @@ const AUTO_LOCATION_STORAGE_KEY = "skystation-auto-location";
 const LOCATION_REQUESTED_STORAGE_KEY = "skystation-location-requested";
 const DAILY_LAYOUT_STORAGE_KEY = "skystation-daily-layout";
 const THEME_STORAGE_KEY = "skystation-theme";
+const LAYOUT_STORAGE_KEY = "skystation-layout";
 const MORNING_NOTIFICATION_STORAGE_KEY = "skystation-morning-notification";
 const AIRNOW_KEY_STORAGE_KEY = "skystation-airnow-key";
 const PRESSURE_HISTORY_STORAGE_KEY = "skystation-pressure-history";
@@ -2920,6 +2921,7 @@ let activeHourlyIndex = 0;
 let activeHourlyMetric = "precip";
 let dailyLayoutMode = loadDailyLayoutMode();
 let selectedTheme = loadTheme();
+let selectedLayout = loadLayout();
 
 function loadSavedLocation() {
   try {
@@ -3001,6 +3003,31 @@ function saveTheme(theme) {
   applyTheme(theme);
   try {
     localStorage.setItem(THEME_STORAGE_KEY, selectedTheme);
+  } catch {
+    // The app remains usable when local storage is unavailable.
+  }
+}
+
+function loadLayout() {
+  try {
+    return localStorage.getItem(LAYOUT_STORAGE_KEY) === "modern" ? "modern" : "classic";
+  } catch {
+    return "classic";
+  }
+}
+
+function applyLayout(layout) {
+  selectedLayout = layout === "modern" ? "modern" : "classic";
+  document.documentElement.classList.toggle("layout-modern", selectedLayout === "modern");
+  document.documentElement.classList.toggle("layout-classic", selectedLayout === "classic");
+  if (elements.layoutClassic) elements.layoutClassic.checked = selectedLayout === "classic";
+  if (elements.layoutModern) elements.layoutModern.checked = selectedLayout === "modern";
+}
+
+function saveLayout(layout) {
+  applyLayout(layout);
+  try {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, selectedLayout);
   } catch {
     // The app remains usable when local storage is unavailable.
   }
@@ -3331,7 +3358,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
@@ -4332,6 +4359,7 @@ function toggleSettings(force) {
     if (elements.autoLocationToggle) elements.autoLocationToggle.checked = autoLocationEnabled;
     if (elements.dailyLayoutToggle) elements.dailyLayoutToggle.checked = dailyLayoutMode === "horizontal";
     applyTheme(selectedTheme);
+    applyLayout(selectedLayout);
     refreshMorningNotificationState();
     elements.locationInput.value = currentLocation.query || currentLocation.label;
     elements.locationStatus.textContent = "";
@@ -4422,6 +4450,12 @@ function bindInteractions() {
   });
   elements.themeDark.addEventListener("change", () => {
     if (elements.themeDark.checked) saveTheme("dark");
+  });
+  elements.layoutClassic.addEventListener("change", () => {
+    if (elements.layoutClassic.checked) saveLayout("classic");
+  });
+  elements.layoutModern.addEventListener("change", () => {
+    if (elements.layoutModern.checked) saveLayout("modern");
   });
   elements.morningNotificationToggle.addEventListener("change", handleMorningNotificationToggle);
   elements.severeAlertsToggle.addEventListener("change", handleSevereAlertsToggle);
@@ -4550,6 +4584,7 @@ function registerServiceWorker() {
 function startApp() {
   cacheElements();
   applyTheme(selectedTheme);
+  applyLayout(selectedLayout);
   bindInteractions();
   updateClock();
   renderDashboard();
