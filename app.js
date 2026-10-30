@@ -3432,8 +3432,25 @@ function renderCurrentWeather(data) {
   setText("currentNarrative", data.narrative);
 }
 
-function renderSummaryStats(stats) {
+function renderModernSummaryStats(stats, feelsLike) {
+  const highLow = stats.find((item) => item.label === "High/Low")?.value || "-- / --";
+  const [high = "--", low = "--"] = highLow.split("/").map((value) => value.trim());
+  const precipitation = stats.find((item) => item.label === "Precipitation")?.value || "--";
+  const summary = document.createElement("span");
+  const nextHour = document.createElement("span");
+  summary.className = "modern-current-summary-line";
+  nextHour.className = "modern-current-summary-line modern-current-summary-line-secondary";
+  summary.textContent = `Feels like ${formatTemp(feelsLike)} | H ${high} | L ${low}`;
+  nextHour.textContent = `Next hr rain chance ${precipitation}`;
+  elements.currentStats.append(summary, nextHour);
+}
+
+function renderSummaryStats(stats, feelsLike = null) {
   elements.currentStats.replaceChildren();
+  if (selectedLayout === "modern") {
+    renderModernSummaryStats(stats, feelsLike);
+    return;
+  }
   stats.forEach((item) => {
     const row = document.createElement("div");
     const icon = document.createElement("img");
@@ -4618,7 +4635,7 @@ async function renderDashboard() {
     activeHourlyMetric = "precip";
     syncHourlyMetricControls();
     renderCurrentWeather(data);
-    renderSummaryStats(data.summaryStats);
+    renderSummaryStats(data.summaryStats, data.current.feelsLike);
     renderDetails(data.details, { deferAllergenAlerts: true });
     renderPrecipitation(data.precipitation);
     renderAlert(data.alert);
@@ -4661,7 +4678,7 @@ async function renderDashboard() {
     fallback.location = { city: currentLocation?.label || DEFAULT_LOCATION.label };
     activeDashboardData = fallback;
     renderCurrentWeather(fallback);
-    renderSummaryStats(fallback.summaryStats);
+    renderSummaryStats(fallback.summaryStats, fallback.current.feelsLike);
     renderDetails(fallback.details);
     renderPrecipitation(fallback.precipitation);
     renderAlert(fallback.alert);
