@@ -600,7 +600,7 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .realfeel { color: var(--modern-text-muted); font-weight: 650; }
 :root.layout-modern .current-stats { display: grid; justify-items: end; gap: 5px; width: max-content; max-width: 100%; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; text-align: right; }
 :root.layout-modern .modern-current-summary-line { display: block; color: var(--modern-text); font-size: .95rem; font-weight: 700; line-height: 1.25; }
-:root.layout-modern .modern-current-summary-line-secondary { color: var(--modern-text-muted); font-size: .86rem; font-weight: 650; }
+:root.layout-modern .modern-current-summary-line-secondary { color: var(--modern-text-muted); font-size: .95rem; font-weight: 650; }
 :root.layout-modern .stat-row { border-color: rgba(247, 250, 252, .1); background: rgba(8, 38, 63, .18); }
 :root.layout-modern .stat-row span,
 :root.layout-modern .stat-label,
@@ -748,7 +748,7 @@ body.pollen-open { overflow: hidden; }
   :root.layout-modern .condition { font-size: 1.3rem; }
   :root.layout-modern .current-stats { gap: 4px; }
   :root.layout-modern .modern-current-summary-line { font-size: .86rem; }
-  :root.layout-modern .modern-current-summary-line-secondary { font-size: .76rem; }
+  :root.layout-modern .modern-current-summary-line-secondary { font-size: .86rem; }
   :root.layout-modern .current-card,
   :root.layout-modern .alert-card,
   :root.layout-modern .precip-card,
