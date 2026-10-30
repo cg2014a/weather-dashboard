@@ -3042,16 +3042,22 @@ function applyLayout(layout) {
   document.documentElement.classList.toggle("layout-classic", !isModern);
   document.documentElement.classList.toggle("theme-dark", selectedTheme === "dark");
   if (elements.currentOutlook) {
-    if (isModern) {
-      const sevenDay = elements.dailyForecast?.closest(".seven-day");
-      const dashboard = sevenDay?.parentElement;
+    const sevenDay = elements.dailyForecast?.closest(".seven-day");
+    const dashboard = sevenDay?.parentElement;
+    const radarBubble = elements.radarPreviewCard?.closest(".radar-bubble");
+    if (selectedLayout === "modern2" && sevenDay && dashboard) {
+      dashboard.insertBefore(elements.precipCard, sevenDay);
+      if (radarBubble) dashboard.insertBefore(radarBubble, sevenDay);
+    } else if (isModern) {
       if (sevenDay && dashboard) {
         dashboard.insertBefore(elements.precipCard, sevenDay);
         dashboard.insertBefore(elements.currentOutlook, sevenDay.nextSibling);
       }
+      if (sevenDay && radarBubble) sevenDay.after(radarBubble);
     } else {
       elements.expandedWeather?.before(elements.currentOutlook);
       elements.alertCard?.after(elements.precipCard);
+      if (sevenDay && radarBubble) sevenDay.after(radarBubble);
     }
   }
   if (activeDashboardData?.precipitation) {

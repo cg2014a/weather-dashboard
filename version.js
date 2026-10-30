@@ -1,4 +1,4 @@
-self.SKYSTATION_VERSION = "v2-24";
+self.SKYSTATION_VERSION = "v2-25";
 self.SKYSTATION_CACHE_NAME = `skystation-${self.SKYSTATION_VERSION}`;
 
 if (typeof document !== "undefined") {

@@ -911,5 +911,42 @@ body.pollen-open { overflow: hidden; }
   :root.layout-modern2 .modern-current-summary-line { font-size: .7rem; }
   :root.layout-modern2 .modern-current-summary-line-secondary { font-size: .64rem; }
 }
+:root.layout-modern2 .current-card {
+  overflow: hidden;
+  border-color: #1c5b84;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #236c95 0%, #17567e 55%, #17476e 100%);
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(13, 48, 73, .2);
+}
+:root.layout-modern2 .current-content { padding-bottom: 16px; }
+:root.layout-modern2 .current-temp,
+:root.layout-modern2 .condition,
+:root.layout-modern2 .modern-current-summary-line { color: #ffffff; }
+:root.layout-modern2 .realfeel,
+:root.layout-modern2 .modern-current-summary-line-secondary { color: rgba(255, 255, 255, .82); }
+:root.layout-modern2 .current-stats { justify-items: start; text-align: left; }
+:root.layout-modern2 .allergen-alerts { margin-top: 0; }
+:root.layout-modern2 .allergen-badge { border-color: rgba(255, 255, 255, .28); background: rgba(6, 36, 60, .24); color: rgba(255, 255, 255, .85); }
+:root.layout-modern2 .allergen-badge strong { color: #ffffff; }
+:root.layout-modern2 .current-outlook {
+  margin: 0 14px 14px;
+  padding: 13px 14px;
+  border: 1px solid rgba(20, 55, 80, .1);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(16, 42, 61, .12);
+}
+:root.layout-modern2 .current-outlook h2 { color: #183b58; }
+:root.layout-modern2 .current-outlook p { color: #536a7e; }
+:root.layout-modern2 .current-card .forecast-card,
+:root.layout-modern2 .quick-item { border-color: #d9e3ec; background: #ffffff; color: #162d43; }
+:root.layout-modern2 .expanded-weather { border-top-color: rgba(255, 255, 255, .3); }
+:root.layout-modern2 .settings-button { background: rgba(23, 105, 170, .08); }
+:root.layout-modern2 .settings-button img { filter: none; opacity: .78; }
+@media (max-width: 560px) {
+  :root.layout-modern2 .current-content { padding: 22px 14px 15px; }
+  :root.layout-modern2 .current-outlook { margin-right: 10px; margin-left: 10px; }
+}
 
 
