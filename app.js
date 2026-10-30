@@ -4203,6 +4203,7 @@ function renderDaily(days) {
     card.className = "daily-day-card";
     row.className = "daily-row";
     if (isHorizontal) row.classList.add("daily-chart-day");
+    if (isHorizontal) detailPanel.classList.add("daily-horizontal-detail");
     row.type = "button";
     row.id = `dailyRow${index}`;
     row.style.animationDelay = `${index * 45}ms`;
