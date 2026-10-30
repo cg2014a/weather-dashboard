@@ -526,16 +526,16 @@ body.pollen-open { overflow: hidden; }
 
 /* Optional Modern layout: scoped so the existing Classic presentation is unchanged. */
 :root.layout-modern {
-  --modern-bg-top: #78c5cc;
-  --modern-bg-bottom: #3d8fa3;
-  --modern-card: rgba(25, 65, 95, .62);
-  --modern-card-strong: rgba(17, 53, 80, .7);
-  --modern-border: rgba(247, 250, 252, .16);
-  --modern-text: #f7fafc;
-  --modern-text-muted: #b8c9d8;
-  --modern-text-dim: #8ea7ba;
+  --modern-bg-top: #f8faf8;
+  --modern-bg-bottom: #f1f5f3;
+  --modern-card: #326d80;
+  --modern-card-strong: #285d71;
+  --modern-border: #24566a;
+  --modern-text: #ffffff;
+  --modern-text-muted: #e5f1f4;
+  --modern-text-dim: #d4e8ee;
   --modern-accent: #2f9cf4;
-  --modern-rain: #36a9e1;
+  --modern-rain: #bfeaff;
   --modern-warm: #ffb51b;
   --modern-warm-soft: #ffd46a;
   --page: var(--modern-bg-bottom);
@@ -546,29 +546,30 @@ body.pollen-open { overflow: hidden; }
   --blue: var(--modern-accent);
   --blue-soft: rgba(47, 156, 244, .16);
   --orange: var(--modern-warm);
-  --shadow: 0 12px 28px rgba(5, 24, 43, .26);
+  --shadow: 0 8px 22px rgba(27, 74, 88, .15);
   color-scheme: dark;
 }
 :root.layout-modern.theme-dark {
   --modern-bg-top: #103c5f;
   --modern-bg-bottom: #071d33;
-  --modern-card: rgba(11, 40, 65, .7);
-  --modern-card-strong: rgba(7, 29, 49, .8);
-  --modern-border: rgba(219, 236, 248, .15);
-  --modern-text: #f7fafc;
-  --modern-text-muted: #b8c9d8;
-  --modern-text-dim: #8ea7ba;
+  --modern-card: #174b63;
+  --modern-card-strong: #113b52;
+  --modern-border: #4c7890;
+  --modern-text: #ffffff;
+  --modern-text-muted: #e5f1f4;
+  --modern-text-dim: #d4e8ee;
   --shadow: 0 14px 30px rgba(1, 12, 23, .34);
 }
 :root.layout-modern body {
-  background: radial-gradient(circle at 12% -8%, rgba(86, 141, 182, .34), transparent 35%), linear-gradient(160deg, var(--modern-bg-top) 0%, var(--modern-bg-bottom) 100%);
+  background: linear-gradient(160deg, var(--modern-bg-top) 0%, var(--modern-bg-bottom) 100%);
   background-attachment: fixed;
 }
 :root.layout-modern .weather-page { padding-top: max(14px, env(safe-area-inset-top)); padding-bottom: max(28px, env(safe-area-inset-bottom)); }
-:root.layout-modern .weather-shell { gap: 14px; width: min(100%, 700px); }
+:root.layout-modern .weather-shell { gap: 18px; width: min(100%, 700px); }
 :root.layout-modern .app-kicker,
-:root.layout-modern .source-footer { color: var(--modern-text-muted); text-shadow: 0 1px 10px rgba(4, 30, 55, .26); }
+:root.layout-modern .source-footer { color: var(--modern-text-muted); text-shadow: none; }
 :root.layout-modern:not(.theme-dark) { --modern-header-text: #123e63; }
+:root.layout-modern:not(.theme-dark) .source-footer { color: var(--modern-header-text); }
 :root.layout-modern:not(.theme-dark) .app-kicker,
 :root.layout-modern:not(.theme-dark) .app-kicker span,
 :root.layout-modern:not(.theme-dark) .app-kicker time { color: var(--modern-header-text); }
@@ -586,22 +587,20 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .radar-panel,
 :root.layout-modern .pollen-panel {
   border: 1px solid var(--modern-border);
-  border-radius: 24px;
+  border-radius: 22px;
   background: var(--modern-card);
   color: var(--modern-text);
-  box-shadow: var(--shadow), inset 0 1px 0 rgba(247, 250, 252, .12);
-  backdrop-filter: blur(12px) saturate(112%);
-  -webkit-backdrop-filter: blur(12px) saturate(112%);
+  box-shadow: var(--shadow);
 }
-:root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr) minmax(220px, .95fr); gap: 18px; padding: 30px 24px 10px; }
+:root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr) minmax(190px, max-content); gap: 18px; padding: 32px 24px 16px; }
 :root.layout-modern .current-stats-panel { grid-column: auto; align-self: start; justify-self: end; width: max-content; max-width: 100%; padding-top: 3px; }
 :root.layout-modern .hero-icon { width: 104px; height: 104px; filter: drop-shadow(0 10px 16px rgba(4, 28, 49, .26)); }
-:root.layout-modern .current-temp { color: var(--modern-text); font-size: clamp(5.6rem, 22vw, 7.5rem); font-weight: 730; letter-spacing: -.06em; }
-:root.layout-modern .condition { color: var(--modern-text); font-size: 1.1rem; letter-spacing: -.01em; }
+:root.layout-modern .current-temp { color: var(--modern-text); font-size: clamp(6rem, 22vw, 8.25rem); font-weight: 780; letter-spacing: -.065em; }
+:root.layout-modern .condition { margin-top: 13px; color: var(--modern-text); font-size: 1.5rem; font-weight: 850; line-height: 1.12; letter-spacing: -.02em; }
 :root.layout-modern .realfeel { color: var(--modern-text-muted); font-weight: 650; }
 :root.layout-modern .current-stats { display: grid; justify-items: end; gap: 5px; width: max-content; max-width: 100%; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; text-align: right; }
 :root.layout-modern .modern-current-summary-line { display: block; color: var(--modern-text); font-size: .95rem; font-weight: 700; line-height: 1.25; }
-:root.layout-modern .modern-current-summary-line-secondary { color: var(--modern-text-muted); font-size: .82rem; font-weight: 650; }
+:root.layout-modern .modern-current-summary-line-secondary { color: var(--modern-text-muted); font-size: .86rem; font-weight: 650; }
 :root.layout-modern .stat-row { border-color: rgba(247, 250, 252, .1); background: rgba(8, 38, 63, .18); }
 :root.layout-modern .stat-row span,
 :root.layout-modern .stat-label,
@@ -617,7 +616,7 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .current-outlook h2 { color: var(--modern-text); }
 :root.layout-modern .current-outlook p { color: var(--modern-text-muted); }
 :root.layout-modern .current-card .forecast-card { border-color: var(--modern-border); border-radius: 18px; background: var(--modern-card-strong); }
-:root.layout-modern .quick-item { border-color: var(--modern-border); border-radius: 18px; background: rgba(18, 57, 85, .6); }
+:root.layout-modern .quick-item { border-color: var(--modern-border); border-radius: 18px; background: var(--modern-card-strong); }
 :root.layout-modern .quick-label,
 :root.layout-modern .sun-times span { color: var(--modern-text-dim); }
 :root.layout-modern .sun-times strong { color: var(--modern-text); }
@@ -628,12 +627,13 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .precip-card p,
 :root.layout-modern .precip-scale,
 :root.layout-modern .precip-time-labels { color: var(--modern-text-muted); }
+:root.layout-modern .precip-card p { font-size: .85rem; line-height: 1.4; }
 :root.layout-modern .precip-amounts { padding-top: 12px; }
 :root.layout-modern .modern-precip-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-:root.layout-modern .modern-precip-chip { display: grid; gap: 3px; min-width: 0; padding: 9px 8px; border: 1px solid rgba(219, 236, 248, .13); border-radius: 12px; background: rgba(7, 29, 49, .24); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .07); }
-:root.layout-modern .modern-precip-chip span { color: var(--modern-text-dim); font-size: .57rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-:root.layout-modern .modern-precip-chip strong { overflow: hidden; color: var(--modern-text); font-size: .72rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-:root.layout-modern .precip-chart-title { color: var(--modern-accent); }
+:root.layout-modern .modern-precip-chip { display: grid; gap: 3px; min-width: 0; padding: 9px 8px; border: 1px solid rgba(219, 236, 248, .22); border-radius: 12px; background: var(--modern-card-strong); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .07); }
+:root.layout-modern .modern-precip-chip span { color: var(--modern-text-dim); font-size: .61rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+:root.layout-modern .modern-precip-chip strong { overflow: hidden; color: var(--modern-text); font-size: .82rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+:root.layout-modern .precip-chart-title { color: var(--modern-text); }
 :root.layout-modern .precip-bars { border-bottom-color: rgba(184, 201, 216, .28); background-image: linear-gradient(to bottom, rgba(54, 169, 225, .16) 1px, transparent 1px), linear-gradient(to right, rgba(54, 169, 225, .16) 1px, transparent 1px), linear-gradient(to right, rgba(54, 169, 225, .08) 1px, transparent 1px); }
 :root.layout-modern .precip-curve-area { fill: rgba(54, 169, 225, .2); }
 :root.layout-modern .precip-curve-line { stroke: var(--modern-rain); }
@@ -643,19 +643,20 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .hourly-column + .hourly-column { border-left-color: rgba(247, 250, 252, .12); }
 :root.layout-modern .hourly-column-graph { background: linear-gradient(180deg, rgba(255, 181, 27, .14), rgba(54, 169, 225, .1)); }
 :root.layout-modern .hourly-column.is-active { background: rgba(47, 156, 244, .14); box-shadow: inset 0 0 0 1px rgba(47, 156, 244, .36); }
+:root.layout-modern .hourly-column.is-active .hourly-time-label { color: var(--modern-text); }
 :root.layout-modern .hourly-time-label,
 :root.layout-modern .hourly-wind-direction { color: var(--modern-text-muted); }
-:root.layout-modern .hourly-precip-label { color: var(--modern-rain); }
+:root.layout-modern .hourly-precip-label { color: var(--modern-text); }
 :root.layout-modern .hourly-precip-label.is-wind-mode,
 :root.layout-modern .hourly-wind-label { color: var(--modern-text-muted); }
-:root.layout-modern .hourly-wind-label.is-muted-metric { color: var(--modern-rain); }
+:root.layout-modern .hourly-wind-label.is-muted-metric { color: var(--modern-text); }
 :root.layout-modern .hourly-metric-toggle button { color: var(--modern-text-muted); }
 :root.layout-modern .hourly-metric-toggle button.is-active { background: rgba(47, 156, 244, .2); color: var(--modern-text); box-shadow: inset 0 0 0 1px rgba(47, 156, 244, .42); }
 :root.layout-modern .hourly-temp-bar { border-color: rgba(247, 250, 252, .72); background: linear-gradient(90deg, var(--modern-warm), var(--modern-warm-soft)); }
 :root.layout-modern .section-heading h2,
 :root.layout-modern .radar-preview-heading h2 { letter-spacing: -.02em; }
-:root.layout-modern .seven-day .daily-heading { display: none; }
-:root.layout-modern .current-outlook { margin: 0; padding: 15px 16px; border: 1px solid var(--modern-border); border-radius: 20px; box-shadow: var(--shadow), inset 0 1px 0 rgba(247, 250, 252, .1); }
+:root.layout-modern .seven-day .daily-heading { display: flex; margin-bottom: 14px; }
+:root.layout-modern .current-outlook { margin: 0; padding: 18px; border: 1px solid var(--modern-border); border-radius: 22px; background: var(--modern-card); box-shadow: var(--shadow); }
 :root.layout-modern .daily-list:not(.is-horizontal) { display: grid; gap: 0; overflow: visible; padding: 0; }
 :root.layout-modern .daily-list:not(.is-horizontal) .daily-day-card { border-top: 1px solid var(--modern-border); border-radius: 0; background: transparent; overflow: visible; }
 :root.layout-modern .daily-list:not(.is-horizontal) .daily-day-card:first-child { border-top: 0; }
@@ -673,14 +674,15 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .daily-list.is-horizontal { border-color: var(--modern-border); background: var(--modern-card-strong); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .08); }
 :root.layout-modern .daily-list.is-horizontal .daily-day-card { border-left-color: rgba(247, 250, 252, .12); }
 :root.layout-modern .daily-list.is-horizontal .daily-day-card.is-open .daily-row { background: rgba(47, 156, 244, .12); box-shadow: inset 0 -2px 0 var(--modern-accent); }
-:root.layout-modern .daily-list.is-horizontal .daily-rain { color: var(--modern-rain); }
+:root.layout-modern .daily-list.is-horizontal .daily-rain { color: var(--modern-text); }
 :root.layout-modern .daily-list.is-horizontal > .daily-horizontal-detail { border-top-color: var(--modern-border); background: var(--modern-card-strong); }
 :root.layout-modern .daily-day,
 :root.layout-modern .daily-high { color: var(--modern-text); }
 :root.layout-modern .daily-day small,
 :root.layout-modern .daily-low,
 :root.layout-modern .daily-condition { color: var(--modern-text-muted); }
-:root.layout-modern .daily-rain { color: var(--modern-rain); }
+:root.layout-modern .daily-condition { font-size: .8rem; }
+:root.layout-modern .daily-rain { color: var(--modern-text); }
 :root.layout-modern .daily-range { background: rgba(142, 167, 186, .32); }
 :root.layout-modern .daily-range::before { border-color: rgba(247, 250, 252, .72); background: linear-gradient(90deg, var(--modern-warm), var(--modern-warm-soft)); box-shadow: 0 4px 9px rgba(4, 25, 45, .28); }
 :root.layout-modern .daily-row[aria-expanded="true"] { background: rgba(47, 156, 244, .12); }
@@ -731,20 +733,22 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .theme-setting-label { color: var(--modern-text); }
 :root.layout-modern .theme-control { border-color: var(--modern-border); background: rgba(5, 29, 50, .54); }
 :root.layout-modern .theme-control label { color: var(--modern-text-muted); }
-:root.layout-modern .theme-control input:checked + label { background: var(--modern-accent); color: var(--modern-text); }
+:root.layout-modern .theme-control input:checked + label { background: #174b61; color: var(--modern-text); }
 :root.layout-modern .settings-heading button,
 :root.layout-modern .use-my-location,
 :root.layout-modern .notification-test-control button { border: 1px solid var(--modern-border); background: rgba(247, 250, 252, .12); color: var(--modern-text); }
 :root.layout-modern .location-entry input { border-color: var(--modern-border); background: rgba(5, 29, 50, .54); color: var(--modern-text); }
 :root.layout-modern .location-entry input::placeholder { color: var(--modern-text-dim); }
-:root.layout-modern .location-entry button { background: var(--modern-accent); color: var(--modern-text); }
+:root.layout-modern .location-entry button { background: #174b61; color: var(--modern-text); }
 @media (max-width: 560px) {
-  :root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr) minmax(142px, 43vw); gap: 8px; padding: 24px 13px 8px; }
-  :root.layout-modern .hero-icon { width: 62px; height: 62px; }
-  :root.layout-modern .current-temp { font-size: clamp(3.6rem, 16vw, 5rem); }
+  :root.layout-modern .weather-shell { gap: 14px; }
+  :root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr) minmax(122px, 38vw); gap: 8px; padding: 24px 14px 12px; }
+  :root.layout-modern .hero-icon { width: 52px; height: 52px; }
+  :root.layout-modern .current-temp { font-size: clamp(4.4rem, 18vw, 6rem); }
+  :root.layout-modern .condition { font-size: 1.3rem; }
   :root.layout-modern .current-stats { gap: 4px; }
-  :root.layout-modern .modern-current-summary-line { font-size: .9rem; }
-  :root.layout-modern .modern-current-summary-line-secondary { font-size: .78rem; }
+  :root.layout-modern .modern-current-summary-line { font-size: .86rem; }
+  :root.layout-modern .modern-current-summary-line-secondary { font-size: .76rem; }
   :root.layout-modern .current-card,
   :root.layout-modern .alert-card,
   :root.layout-modern .precip-card,
@@ -754,7 +758,12 @@ body.pollen-open { overflow: hidden; }
   :root.layout-modern .radar-preview-heading p { overflow-wrap: anywhere; }
   :root.layout-modern .modern-precip-chips { gap: 6px; }
   :root.layout-modern .modern-precip-chip { padding: 8px 6px; }
-  :root.layout-modern .modern-precip-chip strong { font-size: .67rem; }
+  :root.layout-modern .modern-precip-chip strong { font-size: .75rem; }
+}
+@media (max-width: 380px) {
+  :root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr); }
+  :root.layout-modern .current-stats-panel { justify-self: stretch; padding-top: 6px; }
+  :root.layout-modern .current-stats { justify-items: start; text-align: left; }
 }
 
 
