@@ -2993,7 +2993,7 @@ function hasSavedDailyLayoutMode() {
 }
 
 function usesHorizontalDailyLayout() {
-  return dailyLayoutMode === "horizontal" || (selectedLayout === "modern" && !hasSavedDailyLayoutMode());
+  return dailyLayoutMode === "horizontal" || (selectedLayout !== "classic" && !hasSavedDailyLayoutMode());
 }
 
 function saveDailyLayoutMode(value) {
@@ -3027,16 +3027,18 @@ function saveTheme(theme) {
 
 function loadLayout() {
   try {
-    return localStorage.getItem(LAYOUT_STORAGE_KEY) === "modern" ? "modern" : "classic";
+    const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    return saved === "modern" || saved === "modern2" ? saved : "classic";
   } catch {
     return "classic";
   }
 }
 
 function applyLayout(layout) {
-  selectedLayout = layout === "modern" ? "modern" : "classic";
-  const isModern = selectedLayout === "modern";
+  selectedLayout = layout === "modern2" ? "modern2" : layout === "modern" ? "modern" : "classic";
+  const isModern = selectedLayout !== "classic";
   document.documentElement.classList.toggle("layout-modern", isModern);
+  document.documentElement.classList.toggle("layout-modern2", selectedLayout === "modern2");
   document.documentElement.classList.toggle("layout-classic", !isModern);
   document.documentElement.classList.toggle("theme-dark", selectedTheme === "dark");
   if (elements.currentOutlook) {
@@ -3061,6 +3063,7 @@ function applyLayout(layout) {
   }
   if (elements.layoutClassic) elements.layoutClassic.checked = selectedLayout === "classic";
   if (elements.layoutModern) elements.layoutModern.checked = selectedLayout === "modern";
+  if (elements.layoutModern2) elements.layoutModern2.checked = selectedLayout === "modern2";
 }
 
 function saveLayout(layout) {
@@ -3397,7 +3400,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "layoutModern2", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "currentOutlook", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
@@ -3451,7 +3454,7 @@ function renderModernSummaryStats(stats) {
 
 function renderSummaryStats(stats) {
   elements.currentStats.replaceChildren();
-  if (selectedLayout === "modern") {
+  if (selectedLayout !== "classic") {
     renderModernSummaryStats(stats);
     return;
   }
@@ -3729,7 +3732,7 @@ function renderPrecipitation(precipitation) {
   elements.precipAmounts.replaceChildren();
 
   elements.precipAmounts.appendChild(
-    selectedLayout === "modern"
+    selectedLayout !== "classic"
       ? renderModernPrecipitationChips(precipitation)
       : renderPrecipTimeline(precipitation)
   );
@@ -4571,6 +4574,12 @@ function bindInteractions() {
     if (elements.layoutModern.checked) {
       saveDailyLayoutMode("horizontal");
       saveLayout("modern");
+    }
+  });
+  elements.layoutModern2.addEventListener("change", () => {
+    if (elements.layoutModern2.checked) {
+      saveDailyLayoutMode("horizontal");
+      saveLayout("modern2");
     }
   });
   elements.morningNotificationToggle.addEventListener("change", handleMorningNotificationToggle);

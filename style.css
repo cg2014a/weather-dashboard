@@ -763,4 +763,153 @@ body.pollen-open { overflow: hidden; }
 
 
 
+/* Modern2.0: a static, card-first forecast layout with no animated scenery. */
+:root.layout-modern2 {
+  --modern-bg-top: #edf3f8;
+  --modern-bg-bottom: #e7eef5;
+  --modern-card: #ffffff;
+  --modern-card-strong: #ffffff;
+  --modern-border: #d9e3ec;
+  --modern-text: #162d43;
+  --modern-text-muted: #536a7e;
+  --modern-text-dim: #6f8497;
+  --modern-accent: #1769aa;
+  --modern-rain: #167db8;
+  --page: #e7eef5;
+  --card: #ffffff;
+  --text: #162d43;
+  --muted: #536a7e;
+  --line: #d9e3ec;
+  --blue: #1769aa;
+  --blue-soft: #e7f3fb;
+  --shadow: 0 5px 18px rgba(25, 54, 78, .09);
+  color-scheme: light;
+}
+:root.layout-modern2.theme-dark { --page: #3D4E64; }
+:root.layout-modern2 body { background: var(--page); color: var(--text); }
+:root.layout-modern2 .weather-page { padding-top: max(12px, env(safe-area-inset-top)); }
+:root.layout-modern2 .weather-shell { width: min(100%, 720px); gap: 11px; }
+:root.layout-modern2 .app-kicker,
+:root.layout-modern2 .app-kicker span,
+:root.layout-modern2 .app-kicker time { color: #28445b; text-shadow: none; }
+:root.layout-modern2.theme-dark .app-kicker,
+:root.layout-modern2.theme-dark .app-kicker span,
+:root.layout-modern2.theme-dark .app-kicker time,
+:root.layout-modern2.theme-dark .source-footer { color: #ffffff; }
+:root.layout-modern2 .settings-button { background: rgba(23, 105, 170, .08); box-shadow: none; }
+:root.layout-modern2 .settings-button img { display: block; filter: none; opacity: .78; }
+:root.layout-modern2 .current-card,
+:root.layout-modern2 .alert-card,
+:root.layout-modern2 .precip-card,
+:root.layout-modern2 .forecast-card,
+:root.layout-modern2 .quick-item,
+:root.layout-modern2 .radar-preview-card,
+:root.layout-modern2 .radar-panel,
+:root.layout-modern2 .pollen-panel {
+  border: 1px solid var(--modern-border);
+  border-radius: 16px;
+  background: #ffffff;
+  color: var(--modern-text);
+  box-shadow: var(--shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  animation: none;
+}
+:root.layout-modern2 .current-content { grid-template-columns: minmax(0, 1fr) minmax(150px, .8fr); gap: 12px; padding: 22px 20px 10px; }
+:root.layout-modern2 .current-stats-panel { justify-self: end; align-self: start; }
+:root.layout-modern2 .hero-icon { filter: none; }
+:root.layout-modern2 .current-temp { color: #102d48; font-size: clamp(5rem, 20vw, 6.4rem); font-weight: 730; letter-spacing: -.055em; }
+:root.layout-modern2 .condition { color: #183b58; font-size: 1rem; }
+:root.layout-modern2 .realfeel { color: #536a7e; font-weight: 600; }
+:root.layout-modern2 .current-stats { justify-items: end; text-align: right; }
+:root.layout-modern2 .modern-current-summary-line { color: #203e57; font-size: .78rem; font-weight: 700; }
+:root.layout-modern2 .modern-current-summary-line-secondary { color: #536a7e; }
+:root.layout-modern2 .allergen-alerts { margin-bottom: 12px; }
+:root.layout-modern2 .allergen-badge,
+:root.layout-modern2 .day-allergen-pills .allergen-badge { border-color: #dce7ef; background: #f4f8fb; box-shadow: none; color: #536a7e; }
+:root.layout-modern2 .allergen-badge strong,
+:root.layout-modern2 .day-allergen-pills .allergen-badge strong { color: #183b58; }
+:root.layout-modern2 .current-outlook { border-color: var(--modern-border); border-radius: 13px; background: #f4f8fb; box-shadow: none; }
+:root.layout-modern2 .current-outlook h2 { color: #183b58; }
+:root.layout-modern2 .current-outlook p { color: #536a7e; }
+:root.layout-modern2 .current-card .forecast-card,
+:root.layout-modern2 .quick-item,
+:root.layout-modern2 .hourly-bar-chart,
+:root.layout-modern2 .daily-list.is-horizontal,
+:root.layout-modern2 .daily-detail-panel,
+:root.layout-modern2 .pollen-card,
+:root.layout-modern2 .story-block,
+:root.layout-modern2 .day-metrics,
+:root.layout-modern2 .day-metric { border-color: #d9e3ec; background: #ffffff; color: #162d43; box-shadow: none; }
+:root.layout-modern2 .quick-label,
+:root.layout-modern2 .daily-day small,
+:root.layout-modern2 .daily-low,
+:root.layout-modern2 .daily-condition,
+:root.layout-modern2 .hourly-time-label,
+:root.layout-modern2 .hourly-wind-direction,
+:root.layout-modern2 .story-block p,
+:root.layout-modern2 .day-metric span,
+:root.layout-modern2 .day-metric-value small,
+:root.layout-modern2 .pollen-section p,
+:root.layout-modern2 .pollen-species-list,
+:root.layout-modern2 .pollen-attribution { color: #536a7e; }
+:root.layout-modern2 .quick-value,
+:root.layout-modern2 .sun-times strong,
+:root.layout-modern2 .daily-day,
+:root.layout-modern2 .daily-high,
+:root.layout-modern2 .story-block strong,
+:root.layout-modern2 .day-metric-value strong,
+:root.layout-modern2 .pollen-card strong,
+:root.layout-modern2 .pollen-card > span:last-child { color: #162d43; }
+:root.layout-modern2 .precip-card { grid-template-columns: 1fr; gap: 0; }
+:root.layout-modern2 .precip-card h2,
+:root.layout-modern2 .section-heading h2,
+:root.layout-modern2 .radar-preview-heading h2,
+:root.layout-modern2 .radar-heading h2 { color: #183b58; }
+:root.layout-modern2 .precip-card p,
+:root.layout-modern2 .precip-scale,
+:root.layout-modern2 .precip-time-labels,
+:root.layout-modern2 .radar-preview-heading p,
+:root.layout-modern2 .radar-heading p { color: #536a7e; }
+:root.layout-modern2 .precip-curve-area { fill: rgba(22, 125, 184, .18); }
+:root.layout-modern2 .precip-curve-line { stroke: #167db8; }
+:root.layout-modern2 .precip-bars { border-bottom-color: #d9e3ec; background-image: none; }
+:root.layout-modern2 .hourly-column + .hourly-column,
+:root.layout-modern2 .daily-list.is-horizontal .daily-day-card { border-left-color: #e1e8ef; }
+:root.layout-modern2 .hourly-column-graph { background: linear-gradient(180deg, #f5f9fc, #edf4f8); }
+:root.layout-modern2 .hourly-column.is-active,
+:root.layout-modern2 .daily-list.is-horizontal .daily-day-card.is-open .daily-row,
+:root.layout-modern2 .daily-row[aria-expanded="true"] { background: #edf6fc; }
+:root.layout-modern2 .hourly-metric-toggle button { color: #536a7e; }
+:root.layout-modern2 .hourly-metric-toggle button.is-active { background: #e5f2fb; color: #145c91; box-shadow: inset 0 0 0 1px #b6d5ea; }
+:root.layout-modern2 .alert-card { border-color: #ead8b2; background: #fff8e9; color: #4a3817; }
+:root.layout-modern2 .alert-card p { color: #6c5730; }
+:root.layout-modern2 .settings-panel { background: rgba(18, 39, 57, .35); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+:root.layout-modern2 .settings-card { border-color: #d9e3ec; border-radius: 20px 20px 0 0; background: #ffffff; color: #162d43; }
+:root.layout-modern2 .theme-setting,
+:root.layout-modern2 .location-toggle { border-color: #d9e3ec; background: #f5f8fb; }
+:root.layout-modern2 .settings-group h3,
+:root.layout-modern2 .settings-card label,
+:root.layout-modern2 .location-toggle small,
+:root.layout-modern2 .theme-control label { color: #536a7e; }
+:root.layout-modern2 .location-toggle strong,
+:root.layout-modern2 .theme-setting-label { color: #183b58; }
+:root.layout-modern2 .theme-control { border-color: #d9e3ec; background: #edf2f6; }
+:root.layout-modern2 .theme-control input:checked + label { background: #1769aa; color: #ffffff; }
+:root.layout-modern2 .settings-heading button,
+:root.layout-modern2 .use-my-location,
+:root.layout-modern2 .notification-test-control button { border-color: #d9e3ec; background: #f4f8fb; color: #183b58; }
+:root.layout-modern2 .location-entry input { border-color: #d9e3ec; background: #ffffff; color: #162d43; }
+:root.layout-modern2 .location-entry input::placeholder { color: #73869a; }
+:root.layout-modern2 .location-entry button { background: #1769aa; color: #ffffff; }
+@media (max-width: 560px) {
+  :root.layout-modern2 .current-content { grid-template-columns: minmax(0, 1fr) minmax(130px, 42vw); gap: 8px; padding: 20px 12px 8px; }
+  :root.layout-modern2 .hero-icon { width: 58px; height: 58px; }
+  :root.layout-modern2 .temp-row { gap: 8px; }
+  :root.layout-modern2 .current-temp { font-size: clamp(3.8rem, 17vw, 5rem); }
+  :root.layout-modern2 .current-stats { gap: 4px; }
+  :root.layout-modern2 .modern-current-summary-line { font-size: .7rem; }
+  :root.layout-modern2 .modern-current-summary-line-secondary { font-size: .64rem; }
+}
+
 
