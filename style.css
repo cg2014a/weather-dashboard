@@ -948,5 +948,73 @@ body.pollen-open { overflow: hidden; }
   :root.layout-modern2 .current-content { padding: 22px 14px 15px; }
   :root.layout-modern2 .current-outlook { margin-right: 10px; margin-left: 10px; }
 }
+:root.layout-modern2 .weather-page { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+:root.layout-modern2 .current-content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; padding: 22px 24px 12px; }
+:root.layout-modern2 .current-left { position: relative; min-height: 160px; }
+:root.layout-modern2 .temp-row { display: block; }
+:root.layout-modern2 .temp-row > div { justify-items: start; }
+:root.layout-modern2 .hero-icon { position: absolute; top: 2px; right: 8px; width: 72px; height: 72px; }
+:root.layout-modern2 .current-temp { font-size: clamp(5.4rem, 22vw, 7.2rem); line-height: .88; }
+:root.layout-modern2 .realfeel { display: none; }
+:root.layout-modern2 .condition { position: absolute; top: 78px; right: 0; width: 120px; margin: 0; color: #ffffff; text-align: center; font-size: .82rem; }
+:root.layout-modern2 .current-stats-panel { justify-self: stretch; width: 100%; }
+:root.layout-modern2 .current-stats { display: grid; justify-items: start; gap: 4px; width: 100%; }
+:root.layout-modern2 .modern2-summary-line { display: block; max-width: 100%; color: #ffffff; font-size: .76rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+:root.layout-modern2 .modern2-summary-line-secondary { color: rgba(255, 255, 255, .86); }
+:root.layout-modern2 .current-outlook { margin-top: 13px; }
+:root.layout-modern2 .expanded-weather { max-width: none; margin: 0 12px 14px; padding-top: 12px; overflow: visible; }
+:root.layout-modern2 .expanded-weather .hourly-panel { padding: 12px; }
+:root.layout-modern2 .radar-preview-card { padding: 12px; }
+:root.layout-modern2 .radar-preview-frame { height: 180px; pointer-events: auto; }
+:root.layout-modern2 .modern2-bottom-nav {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 18;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  width: min(100%, 720px);
+  margin: 0 auto;
+  padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+  border-top: 1px solid #d9e3ec;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 -5px 18px rgba(25, 54, 78, .1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+:root:not(.layout-modern2) .modern2-bottom-nav { display: none; }
+:root.layout-modern2 .modern2-bottom-nav button {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 3px 2px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #627689;
+  font: inherit;
+  font-size: .62rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+:root.layout-modern2 .modern2-bottom-nav button img { width: 17px; height: 17px; opacity: .72; }
+:root.layout-modern2 .modern2-bottom-nav button[aria-current="page"] { color: #155f92; background: #eaf4fb; }
+:root.layout-modern2 .modern2-bottom-nav button[aria-current="page"] img { opacity: 1; }
+:root.layout-modern2 .modern2-bottom-nav button:focus-visible { outline: 2px solid #1769aa; outline-offset: -2px; }
+body.radar-open .modern2-bottom-nav,
+body.pollen-open .modern2-bottom-nav { display: none; }
+@media (max-width: 560px) {
+  :root.layout-modern2 .current-content { padding: 20px 16px 10px; }
+  :root.layout-modern2 .current-left { min-height: 144px; }
+  :root.layout-modern2 .hero-icon { top: 0; right: 4px; width: 64px; height: 64px; }
+  :root.layout-modern2 .current-temp { font-size: clamp(4.8rem, 21vw, 6rem); }
+  :root.layout-modern2 .condition { top: 70px; width: 108px; font-size: .76rem; }
+  :root.layout-modern2 .modern2-summary-line { font-size: .68rem; }
+  :root.layout-modern2 .current-outlook { margin-top: 10px; }
+}
 
 

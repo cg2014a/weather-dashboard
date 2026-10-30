@@ -32,7 +32,10 @@ const APP_SHELL = [
   "./icons/pollen.svg",
   "./icons/moon.svg",
   "./icons/alert.svg",
-  "./icons/nav-settings.svg"
+  "./icons/nav-settings.svg",
+  "./icons/nav-weather.svg",
+  "./icons/nav-radar.svg",
+  "./icons/nav-news.svg"
 ];
 
 self.addEventListener("install", (event) => {

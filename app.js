@@ -2926,6 +2926,7 @@ let activeHourlyMetric = "precip";
 let dailyLayoutMode = loadDailyLayoutMode();
 let selectedTheme = loadTheme();
 let selectedLayout = loadLayout();
+let modern2ExpandedInitialized = false;
 
 function loadSavedLocation() {
   try {
@@ -3035,12 +3036,24 @@ function loadLayout() {
 }
 
 function applyLayout(layout) {
+  const wasModern2 = selectedLayout === "modern2";
   selectedLayout = layout === "modern2" ? "modern2" : layout === "modern" ? "modern" : "classic";
   const isModern = selectedLayout !== "classic";
   document.documentElement.classList.toggle("layout-modern", isModern);
   document.documentElement.classList.toggle("layout-modern2", selectedLayout === "modern2");
   document.documentElement.classList.toggle("layout-classic", !isModern);
   document.documentElement.classList.toggle("theme-dark", selectedTheme === "dark");
+  if (selectedLayout === "modern2" && !modern2ExpandedInitialized) {
+    elements.expandedWeather.hidden = false;
+    elements.currentCard.setAttribute("aria-expanded", "true");
+    modern2ExpandedInitialized = true;
+  } else if (selectedLayout !== "modern2" && wasModern2) {
+    elements.expandedWeather.hidden = true;
+    elements.currentCard.setAttribute("aria-expanded", "false");
+    modern2ExpandedInitialized = false;
+  }
+  const outlookTitle = elements.currentOutlook?.querySelector("h2");
+  if (outlookTitle) outlookTitle.textContent = selectedLayout === "modern2" ? "Today's Outlook" : "What to expect";
   if (elements.currentOutlook) {
     const sevenDay = elements.dailyForecast?.closest(".seven-day");
     const dashboard = sevenDay?.parentElement;
@@ -3406,7 +3419,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "layoutModern2", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "modern2BottomNav", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "layoutModern2", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "currentOutlook", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
@@ -3458,8 +3471,35 @@ function renderModernSummaryStats(stats) {
   elements.currentStats.append(highLowLine, windLine, precipitationLine);
 }
 
+function renderModern2SummaryStats(stats) {
+  const highLow = stats.find((item) => item.label === "High/Low")?.value || "-- / --";
+  const [high = "--", low = "--"] = highLow.split("/").map((value) => value.trim());
+  const feelsLike = elements.feelsLike?.textContent || "--";
+  const wind = stats.find((item) => item.label === "Wind")?.value || "--";
+  const precipitation = stats.find((item) => item.label === "Precipitation")?.value || "--";
+  const precipitationType = activeDashboardData?.precipitation?.type || "";
+  const precipitationLabel = /snow/i.test(precipitationType)
+    ? "Chance of Snow"
+    : /sleet|freezing|ice/i.test(precipitationType)
+      ? "Chance of Ice"
+      : /rain/i.test(precipitationType)
+        ? "Chance of Rain"
+        : "Precipitation";
+  const comfortLine = document.createElement("span");
+  const conditionsLine = document.createElement("span");
+  comfortLine.className = "modern2-summary-line";
+  conditionsLine.className = "modern2-summary-line modern2-summary-line-secondary";
+  comfortLine.textContent = `Feels Like ${feelsLike}  |  High ${high}  |  Low ${low}`;
+  conditionsLine.textContent = `Wind ${wind}  |  ${precipitationLabel} ${precipitation}`;
+  elements.currentStats.append(comfortLine, conditionsLine);
+}
+
 function renderSummaryStats(stats) {
   elements.currentStats.replaceChildren();
+  if (selectedLayout === "modern2") {
+    renderModern2SummaryStats(stats);
+    return;
+  }
   if (selectedLayout !== "classic") {
     renderModernSummaryStats(stats);
     return;
@@ -4451,6 +4491,7 @@ function toggleRadar(force) {
   elements.radarPanel.classList.toggle("is-fullscreen", shouldOpen);
   document.body.classList.toggle("radar-open", shouldOpen);
   elements.radarClose.textContent = shouldOpen ? "Back" : "Close";
+  if (!shouldOpen && selectedLayout === "modern2") setModern2NavigationActive("today");
 }
 
 function togglePollen(force) {
@@ -4458,6 +4499,39 @@ function togglePollen(force) {
   elements.pollenPanel.hidden = !shouldOpen;
   elements.pollenPanel.classList.toggle("is-fullscreen", shouldOpen);
   document.body.classList.toggle("pollen-open", shouldOpen);
+  if (!shouldOpen && selectedLayout === "modern2") setModern2NavigationActive("today");
+}
+
+function setModern2NavigationActive(section) {
+  elements.modern2BottomNav.querySelectorAll("[data-modern2-nav]").forEach((button) => {
+    if (button.dataset.modern2Nav === section) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+}
+
+function navigateModern2(section) {
+  setModern2NavigationActive(section);
+
+  const closeOverlay = () => {
+    if (elements.radarPanel.classList.contains("is-fullscreen")) toggleRadar(false);
+    if (elements.pollenPanel.classList.contains("is-fullscreen")) togglePollen(false);
+  };
+
+  if (section === "allergies") {
+    togglePollen(true);
+  } else if (section === "radar") {
+    toggleRadar(true);
+  } else {
+    closeOverlay();
+    if (section === "hourly") {
+      togglePanel(elements.currentCard, elements.expandedWeather, true);
+      document.getElementById("hourly-title")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (section === "daily") {
+      elements.dailyForecast?.closest(".seven-day")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      elements.currentCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
 }
 
 function setHourlyMetric(metric) {
@@ -4522,6 +4596,10 @@ async function handleUseMyLocation() {
 }
 
 function bindInteractions() {
+  elements.modern2BottomNav.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-modern2-nav]");
+    if (button) navigateModern2(button.dataset.modern2Nav);
+  });
   elements.currentCard.addEventListener("click", (event) => {
     if (event.target.closest("#hourlyForecast") || event.target.closest(".hourly-metric-toggle")) return;
     togglePanel(elements.currentCard, elements.expandedWeather);
