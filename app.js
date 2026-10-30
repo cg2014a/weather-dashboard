@@ -2444,7 +2444,7 @@ class WeatherService {
 
   precipArrivalLabel(minutes) {
     if (!Number.isFinite(minutes) || minutes <= 15) return "within 15 min";
-    return `in ~${Math.round(minutes / 15) * 15} min`;
+    return `in about ${Math.round(minutes / 15) * 15} min`;
   }
 
   localObservedConditionText(observation) {
@@ -3759,8 +3759,9 @@ function renderModernPrecipitationChips(precipitation) {
     chips.appendChild(chip);
   };
 
+  const precipitationDescriptor = modernPrecipitationDescriptor(precipitation);
   addChip("Timing", modernPrecipitationTiming(precipitation));
-  addChip("Intensity", modernPrecipitationIntensity(precipitation));
+  addChip(precipitationDescriptor.label, precipitationDescriptor.value);
   addChip("Duration", modernPrecipitationDuration(precipitation));
   return chips;
 }
@@ -3769,17 +3770,19 @@ function modernPrecipitationTiming(precipitation) {
   if (precipitation.currentObserved) return "Now";
   const minutes = Number(precipitation.arrivalMinutes);
   if (!Number.isFinite(minutes)) return "Within hour";
-  if (minutes <= 15) return "~15 min";
-  return `~${Math.round(minutes / 15) * 15} min`;
+  if (minutes <= 15) return "Within 15 min";
+  return `About ${Math.round(minutes / 15) * 15} min`;
 }
 
-function modernPrecipitationIntensity(precipitation) {
+function modernPrecipitationDescriptor(precipitation) {
   const type = precipitation.type || "Precipitation";
-  if (type === "Sleet") return "Mixed";
-  const amount = Number(precipitation.currentAmount);
-  const intensity = Number.isFinite(amount) ? precipIntensityFromAmount(amount) : "Dry";
-  if (intensity !== "Dry") return type === "Snow" ? `${intensity} Snow` : intensity;
-  return type === "Sleet" ? "Mixed" : type;
+  const amounts = [precipitation.currentAmount, ...(precipitation.timeline || []).map((interval) => interval.amount)]
+    .map(Number)
+    .filter(Number.isFinite);
+  const peakAmount = Math.max(...amounts, 0);
+  const intensity = precipIntensityFromAmount(peakAmount);
+  if (intensity !== "Dry") return { label: "Intensity", value: intensity === "Drizzle" ? "Light" : intensity };
+  return { label: "Type", value: type === "Sleet" ? "Mixed" : type };
 }
 
 function modernPrecipitationDuration(precipitation) {
