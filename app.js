@@ -967,6 +967,11 @@ class WeatherService {
     return /rain|showers|thunderstorm|snow|sleet|drizzle|freezing rain/i.test(String(text));
   }
 
+  isCurrentPrecipCondition(text = "") {
+    return this.isPrecipCondition(text)
+      && !/\b(chance|possible|likely|expected|forecast|later|isolated|scattered)\b/i.test(String(text));
+  }
+
   mphFromText(text = "") {
     const values = [...String(text).matchAll(/(\d+(?:\.\d+)?)\s*mph/gi)]
       .map((match) => this.numberOrNull(match[1]))
@@ -1345,8 +1350,7 @@ class WeatherService {
     const observedHeatIndex = this.readTemperature(observation?.properties?.heatIndex?.value);
     const observedWindChill = this.readTemperature(observation?.properties?.windChill?.value);
     const feelsLike = observedHeatIndex ?? observedWindChill ?? supplemental?.feelsLike ?? temp;
-    const observedCondition = this.isFreshObservation(observation) ? this.visibleObservedConditionText(observation) : "";
-    const condition = observedCondition || period?.shortForecast || "Current conditions";
+    const condition = this.currentConditionText(period, observation);
 
     return {
       temperature: temp,
@@ -1356,6 +1360,11 @@ class WeatherService {
       high: todayHigh,
       low: tonightLow
     };
+  }
+
+  currentConditionText(period, observation) {
+    const observedCondition = this.isFreshObservation(observation) ? this.visibleObservedConditionText(observation) : "";
+    return observedCondition || period?.shortForecast || "Current conditions";
   }
 
   finalizeCurrentWind(period, observation, supplemental) {
@@ -1654,21 +1663,23 @@ class WeatherService {
     const currentAmount = currentEvidence.chartAmount;
     const shortTerm = this.shortTermPrecipitationSignal(hourlyPeriods, supplemental, currentAmount);
     const localObserved = currentEvidence.observed;
+    const currentCondition = this.currentConditionText(currentPeriod, observation);
+    const currentConditionPrecip = this.isCurrentPrecipCondition(currentCondition);
     const nearbyObserved = this.isNearbyPrecipActivelyOccurring(observation);
-    const type = localObserved
-      ? this.currentPrecipitationType(supplemental, currentPeriod, latestInterval, currentEvidence.source)
-      : this.shortTermPrecipType(shortTerm, currentPeriod, hourlyPeriods, supplemental);
+    let type = this.shortTermPrecipType(shortTerm, currentPeriod, hourlyPeriods, supplemental);
+    if (currentConditionPrecip) type = this.precipType(currentCondition);
+    if (localObserved) type = this.currentPrecipitationType(supplemental, currentPeriod, latestInterval, currentEvidence.source);
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
-    const active = localObserved || shortTerm.meaningful;
+    const active = localObserved || currentConditionPrecip || shortTerm.meaningful;
     const timeline = shortTerm.timeline;
-    const summary = this.precipitationSummary({ localObserved, nearbyObserved, shortTerm, type });
+    const summary = this.precipitationSummary({ localObserved, currentConditionPrecip, nearbyObserved, shortTerm, type });
 
     return {
       active,
       type,
       icon: type === "Snow" || type === "Sleet" ? "weather-snow.svg" : "weather-rain.svg",
       summary: active ? summary : "No significant precipitation expected.",
-      current: localObserved ? `${type} now` : `${currentChance}% now`,
+      current: localObserved || currentConditionPrecip ? `${type} now` : `${currentChance}% now`,
       nextHour: `${shortTerm.peakChance}% next hour`,
       amount: this.precipAmountLabel(expectedAmount, hourlyPeriods, supplemental),
       today: expectedAmount >= 0.001 ? `${this.formatInches(expectedAmount)} today` : "",
@@ -1677,12 +1688,13 @@ class WeatherService {
       timelineSource: shortTerm.source,
       currentSource: currentEvidence.source,
       currentObserved: localObserved,
+      currentConditionPrecip,
       arrivalMinutes: shortTerm.arrivalMinutes,
       futureMeaningful: shortTerm.futureMeaningful,
       futureHasAmounts: shortTerm.futureHasAmounts,
       currentAmount,
       currentRadarDbz: currentEvidence.source === "iem-n0q" && localObserved ? currentEvidence.radar?.dbz ?? null : null,
-      chartMessage: this.precipitationChartMessage({ localObserved, shortTerm, type, currentAmount })
+      chartMessage: this.precipitationChartMessage({ localObserved, currentConditionPrecip, shortTerm, type, currentAmount })
     };
   }
 
@@ -2402,13 +2414,14 @@ class WeatherService {
     return values;
   }
 
-  precipitationSummary({ localObserved, nearbyObserved, shortTerm, type }) {
+  precipitationSummary({ localObserved, currentConditionPrecip, nearbyObserved, shortTerm, type }) {
     const nearbySupport = nearbyObserved ? " A nearby station also reports precipitation." : "";
     if (localObserved) {
       if (shortTerm.source === "minutely" && !shortTerm.futureMeaningful) return `${type} is occurring now and may end within 15 minutes.${nearbySupport}`;
       if (shortTerm.source === "minutely" && shortTerm.futureHasAmounts) return `${type} is occurring now and continuing.${nearbySupport}`;
       return `${type} is occurring now.${nearbySupport}`;
     }
+    if (currentConditionPrecip) return `${type} now.${nearbySupport}`;
     if (shortTerm.source === "minutely") {
       if (shortTerm.arrivalMinutes !== null) {
         const arrival = this.precipArrivalLabel(shortTerm.arrivalMinutes);
@@ -2420,7 +2433,7 @@ class WeatherService {
     return `${type} likely within the hour.${nearbySupport}`;
   }
 
-  precipitationChartMessage({ localObserved, shortTerm, type, currentAmount }) {
+  precipitationChartMessage({ localObserved, currentConditionPrecip, shortTerm, type, currentAmount }) {
     if (localObserved) {
       const intensity = this.precipitationIntensityLabel(currentAmount, type);
       if (shortTerm.source === "minutely" && !shortTerm.futureMeaningful) return `${intensity} now · may end within 15 minutes`;
@@ -2428,6 +2441,7 @@ class WeatherService {
       if (shortTerm.peakChance >= SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD) return `${intensity} now · more possible within the hour`;
       return `${intensity} now`;
     }
+    if (currentConditionPrecip) return `${type} now`;
     if (shortTerm.source === "minutely" && shortTerm.arrivalMinutes !== null) {
       const arrival = this.precipArrivalLabel(shortTerm.arrivalMinutes);
       return `${type} possible ${arrival}`;
@@ -3758,7 +3772,7 @@ function renderModernPrecipitationChips(precipitation) {
 }
 
 function modernPrecipitationTiming(precipitation) {
-  if (precipitation.currentObserved) return "Now";
+  if (precipitation.currentObserved || precipitation.currentConditionPrecip) return "Now";
   const minutes = Number(precipitation.arrivalMinutes);
   if (!Number.isFinite(minutes)) return "Within hour";
   if (minutes <= 15) return "Within 15 min";
@@ -3784,6 +3798,7 @@ function modernPrecipitationDuration(precipitation) {
     }
     return "Within hour";
   }
+  if (precipitation.currentConditionPrecip) return precipitation.futureHasAmounts ? "Continuing" : "Short-lived";
   return Number.isFinite(Number(precipitation.arrivalMinutes)) ? "Short-lived" : "Within hour";
 }
 
