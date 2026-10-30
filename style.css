@@ -594,12 +594,12 @@ body.pollen-open { overflow: hidden; }
   -webkit-backdrop-filter: blur(12px) saturate(112%);
 }
 :root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr) minmax(220px, .95fr); gap: 18px; padding: 30px 24px 10px; }
-:root.layout-modern .current-stats-panel { grid-column: auto; align-self: center; }
+:root.layout-modern .current-stats-panel { grid-column: auto; align-self: start; }
 :root.layout-modern .hero-icon { width: 104px; height: 104px; filter: drop-shadow(0 10px 16px rgba(4, 28, 49, .26)); }
 :root.layout-modern .current-temp { color: var(--modern-text); font-size: clamp(5.6rem, 22vw, 7.5rem); font-weight: 730; letter-spacing: -.06em; }
 :root.layout-modern .condition { color: var(--modern-text); font-size: 1.1rem; letter-spacing: -.01em; }
 :root.layout-modern .realfeel { color: var(--modern-text-muted); font-weight: 650; }
-:root.layout-modern .current-stats { display: grid; gap: 3px; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+:root.layout-modern .current-stats { display: grid; justify-items: start; gap: 3px; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 :root.layout-modern .modern-current-summary-line { display: block; color: var(--modern-text); font-size: .78rem; font-weight: 650; line-height: 1.35; }
 :root.layout-modern .modern-current-summary-line-secondary { color: var(--modern-text-muted); font-size: .7rem; font-weight: 600; }
 :root.layout-modern .stat-row { border-color: rgba(247, 250, 252, .1); background: rgba(8, 38, 63, .18); }

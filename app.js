@@ -3432,23 +3432,27 @@ function renderCurrentWeather(data) {
   setText("currentNarrative", data.narrative);
 }
 
-function renderModernSummaryStats(stats, feelsLike) {
+function renderModernSummaryStats(stats) {
   const highLow = stats.find((item) => item.label === "High/Low")?.value || "-- / --";
   const [high = "--", low = "--"] = highLow.split("/").map((value) => value.trim());
+  const wind = stats.find((item) => item.label === "Wind")?.value || "--";
   const precipitation = stats.find((item) => item.label === "Precipitation")?.value || "--";
-  const summary = document.createElement("span");
-  const nextHour = document.createElement("span");
-  summary.className = "modern-current-summary-line";
-  nextHour.className = "modern-current-summary-line modern-current-summary-line-secondary";
-  summary.textContent = `Feels like ${formatTemp(feelsLike)} | H ${high} | L ${low}`;
-  nextHour.textContent = `Next hr rain chance ${precipitation}`;
-  elements.currentStats.append(summary, nextHour);
+  const highLowLine = document.createElement("span");
+  const windLine = document.createElement("span");
+  const precipitationLine = document.createElement("span");
+  highLowLine.className = "modern-current-summary-line";
+  windLine.className = "modern-current-summary-line";
+  precipitationLine.className = "modern-current-summary-line modern-current-summary-line-secondary";
+  highLowLine.textContent = `H ${high} | L ${low}`;
+  windLine.textContent = `Wind ${wind}`;
+  precipitationLine.textContent = `Precipitation ${precipitation}`;
+  elements.currentStats.append(highLowLine, windLine, precipitationLine);
 }
 
-function renderSummaryStats(stats, feelsLike = null) {
+function renderSummaryStats(stats) {
   elements.currentStats.replaceChildren();
   if (selectedLayout === "modern") {
-    renderModernSummaryStats(stats, feelsLike);
+    renderModernSummaryStats(stats);
     return;
   }
   stats.forEach((item) => {
@@ -4635,7 +4639,7 @@ async function renderDashboard() {
     activeHourlyMetric = "precip";
     syncHourlyMetricControls();
     renderCurrentWeather(data);
-    renderSummaryStats(data.summaryStats, data.current.feelsLike);
+    renderSummaryStats(data.summaryStats);
     renderDetails(data.details, { deferAllergenAlerts: true });
     renderPrecipitation(data.precipitation);
     renderAlert(data.alert);
@@ -4678,7 +4682,7 @@ async function renderDashboard() {
     fallback.location = { city: currentLocation?.label || DEFAULT_LOCATION.label };
     activeDashboardData = fallback;
     renderCurrentWeather(fallback);
-    renderSummaryStats(fallback.summaryStats, fallback.current.feelsLike);
+    renderSummaryStats(fallback.summaryStats);
     renderDetails(fallback.details);
     renderPrecipitation(fallback.precipitation);
     renderAlert(fallback.alert);
