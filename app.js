@@ -3054,7 +3054,7 @@ function applyLayout(layout) {
         dashboard.insertBefore(elements.precipCard, sevenDay);
         dashboard.insertBefore(elements.currentOutlook, sevenDay.nextSibling);
       }
-      if (sevenDay && radarBubble) sevenDay.after(radarBubble);
+      if (sevenDay && radarBubble) elements.currentOutlook.after(radarBubble);
     } else {
       elements.currentCard.insertBefore(elements.currentOutlook, elements.expandedWeather);
       elements.alertCard?.after(elements.precipCard);
