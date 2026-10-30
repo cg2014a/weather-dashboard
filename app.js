@@ -3,7 +3,7 @@ const DEFAULT_LOCATION = { label: "Olathe, KS", query: "Olathe, KS", city: "Olat
 const LOCATION_STORAGE_KEY = "skystation-location";
 const AUTO_LOCATION_STORAGE_KEY = "skystation-auto-location";
 const LOCATION_REQUESTED_STORAGE_KEY = "skystation-location-requested";
-const DAILY_LAYOUT_STORAGE_KEY = "skystation-daily-layout";
+const DAILY_LAYOUT_STORAGE_KEY = "skystation-daily-layout-v2";
 const THEME_STORAGE_KEY = "skystation-theme";
 const LAYOUT_STORAGE_KEY = "skystation-layout";
 const MORNING_NOTIFICATION_STORAGE_KEY = "skystation-morning-notification";
@@ -2983,17 +2983,8 @@ function loadDailyLayoutMode() {
   }
 }
 
-function hasSavedDailyLayoutMode() {
-  try {
-    const saved = localStorage.getItem(DAILY_LAYOUT_STORAGE_KEY);
-    return saved === "horizontal" || saved === "vertical";
-  } catch {
-    return false;
-  }
-}
-
 function usesHorizontalDailyLayout() {
-  return dailyLayoutMode === "horizontal" || (selectedLayout !== "classic" && !hasSavedDailyLayoutMode());
+  return dailyLayoutMode === "horizontal";
 }
 
 function saveDailyLayoutMode(value) {
@@ -4582,7 +4573,6 @@ function bindInteractions() {
   });
   elements.layoutModern.addEventListener("change", () => {
     if (elements.layoutModern.checked) {
-      saveDailyLayoutMode("horizontal");
       saveLayout("modern");
     }
   });

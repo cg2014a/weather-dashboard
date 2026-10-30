@@ -655,20 +655,19 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .radar-preview-heading h2 { letter-spacing: -.02em; }
 :root.layout-modern .seven-day .daily-heading { display: none; }
 :root.layout-modern .current-outlook { margin: 0; padding: 15px 16px; border: 1px solid var(--modern-border); border-radius: 20px; box-shadow: var(--shadow), inset 0 1px 0 rgba(247, 250, 252, .1); }
-:root.layout-modern .daily-list:not(.is-horizontal) { display: flex; gap: 10px; overflow-x: auto; padding: 2px 1px 7px; scroll-snap-type: x proximity; scrollbar-width: none; }
-:root.layout-modern .daily-list:not(.is-horizontal)::-webkit-scrollbar { display: none; }
-:root.layout-modern .daily-list:not(.is-horizontal) .daily-day-card { flex: 0 0 132px; border: 1px solid var(--modern-border); border-radius: 18px; background: var(--modern-card-strong); overflow: hidden; scroll-snap-align: start; }
-:root.layout-modern .daily-list:not(.is-horizontal) .daily-row,
-:root.layout-modern .daily-list:not(.is-horizontal) .daily-row.has-designation:not(.daily-chart-day) { position: relative; grid-template-columns: 1fr; grid-template-rows: auto 34px auto auto auto; justify-items: center; gap: 6px; min-height: 208px; padding: 13px 10px; text-align: center; }
-:root.layout-modern .daily-list:not(.is-horizontal) .daily-row.has-designation:not(.daily-chart-day) > .day-designation { position: absolute; top: 0; left: 0; width: 100%; max-width: none; min-height: 20px; height: 20px; border-radius: 0; writing-mode: horizontal-tb; transform: none; }
-:root.layout-modern .daily-list:not(.is-horizontal) .daily-row.has-designation:not(.daily-chart-day) { padding-top: 28px; }
-:root.layout-modern .daily-list:not(.is-horizontal) .daily-icon-group { justify-items: center; }
-:root.layout-modern .daily-list:not(.is-horizontal) .daily-icon-line { grid-template-columns: 1fr; justify-items: center; row-gap: 3px; }
-:root.layout-modern .daily-list:not(.is-horizontal) .daily-condition { display: none; }
-:root.layout-modern .daily-list:not(.is-horizontal) .daily-range { width: 62px; height: 10px; }
+:root.layout-modern .daily-list:not(.is-horizontal) { display: grid; gap: 0; overflow: visible; padding: 0; }
+:root.layout-modern .daily-list:not(.is-horizontal) .daily-day-card { border-top: 1px solid var(--modern-border); border-radius: 0; background: transparent; overflow: visible; }
+:root.layout-modern .daily-list:not(.is-horizontal) .daily-day-card:first-child { border-top: 0; }
+:root.layout-modern .daily-list:not(.is-horizontal) .daily-row { position: relative; grid-template-columns: 42px minmax(0, 1.45fr) 44px minmax(0, 1fr) 44px; grid-template-rows: none; justify-items: stretch; align-items: center; gap: 9px; min-height: 56px; padding: 2px 0; text-align: left; }
+:root.layout-modern .daily-list:not(.is-horizontal) .daily-row.has-designation:not(.daily-chart-day) { grid-template-columns: 16px 42px minmax(0, 1.45fr) 44px minmax(0, 1fr) 44px; gap: 7px; padding: 2px 0; }
+:root.layout-modern .daily-list:not(.is-horizontal) .daily-row.has-designation:not(.daily-chart-day) > .day-designation { position: static; align-self: stretch; width: 16px; max-width: 16px; min-height: 56px; height: auto; padding: 0; border-radius: 0; writing-mode: vertical-rl; transform: rotate(180deg); }
+:root.layout-modern .daily-list:not(.is-horizontal) .daily-icon-group { justify-items: start; }
+:root.layout-modern .daily-list:not(.is-horizontal) .daily-icon-line { grid-template-columns: 28px minmax(0, auto); justify-items: stretch; column-gap: 10px; row-gap: 0; }
+:root.layout-modern .daily-list:not(.is-horizontal) .daily-condition { display: block; }
+:root.layout-modern .daily-list:not(.is-horizontal) .daily-range { width: auto; height: 12px; }
 :root.layout-modern .daily-list:not(.is-horizontal) .daily-low,
 :root.layout-modern .daily-list:not(.is-horizontal) .daily-high,
-:root.layout-modern .daily-list:not(.is-horizontal) .daily-rain { text-align: center; }
+:root.layout-modern .daily-list:not(.is-horizontal) .daily-rain { text-align: right; }
 :root.layout-modern .daily-list:not(.is-horizontal) .daily-detail-panel { padding: 10px; }
 :root.layout-modern .daily-list.is-horizontal { border-color: var(--modern-border); background: var(--modern-card-strong); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .08); }
 :root.layout-modern .daily-list.is-horizontal .daily-day-card { border-left-color: rgba(247, 250, 252, .12); }
@@ -750,7 +749,6 @@ body.pollen-open { overflow: hidden; }
   :root.layout-modern .precip-card,
   :root.layout-modern .forecast-card,
   :root.layout-modern .radar-preview-card { border-radius: 20px; }
-  :root.layout-modern .daily-list:not(.is-horizontal) .daily-day-card { flex-basis: 122px; }
   :root.layout-modern .radar-preview-heading { gap: 8px; }
   :root.layout-modern .radar-preview-heading p { overflow-wrap: anywhere; }
   :root.layout-modern .modern-precip-chips { gap: 6px; }
