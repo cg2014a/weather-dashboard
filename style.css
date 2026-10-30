@@ -593,8 +593,8 @@ body.pollen-open { overflow: hidden; }
   backdrop-filter: blur(12px) saturate(112%);
   -webkit-backdrop-filter: blur(12px) saturate(112%);
 }
-:root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 30px 24px 10px; }
-:root.layout-modern .current-stats-panel { grid-column: 1; }
+:root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr) minmax(220px, .95fr); gap: 18px; padding: 30px 24px 10px; }
+:root.layout-modern .current-stats-panel { grid-column: auto; align-self: center; }
 :root.layout-modern .hero-icon { width: 104px; height: 104px; filter: drop-shadow(0 10px 16px rgba(4, 28, 49, .26)); }
 :root.layout-modern .current-temp { color: var(--modern-text); font-size: clamp(5.6rem, 22vw, 7.5rem); font-weight: 730; letter-spacing: -.06em; }
 :root.layout-modern .condition { color: var(--modern-text); font-size: 1.1rem; letter-spacing: -.01em; }
@@ -739,7 +739,7 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .location-entry input::placeholder { color: var(--modern-text-dim); }
 :root.layout-modern .location-entry button { background: var(--modern-accent); color: var(--modern-text); }
 @media (max-width: 560px) {
-  :root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 24px 13px 8px; }
+  :root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr) minmax(142px, 43vw); gap: 8px; padding: 24px 13px 8px; }
   :root.layout-modern .hero-icon { width: 62px; height: 62px; }
   :root.layout-modern .current-temp { font-size: clamp(3.6rem, 16vw, 5rem); }
   :root.layout-modern .current-card,
