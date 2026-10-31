@@ -1678,7 +1678,7 @@ class WeatherService {
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
     const active = localObserved || nearbyObserved || forecastCurrent || shortTerm.meaningful;
     const timeline = shortTerm.timeline;
-    const summary = this.precipitationSummary({ localObserved, nearbyObserved, type });
+    const summary = this.precipitationSummary({ localObserved, nearbyObserved, forecastCurrent, shortTerm, type });
     const forecastIntervals = this.precipMinutelyIntervals(supplemental)
       .filter((interval) => Number.isFinite(interval.minutesFromNow) && interval.minutesFromNow > 0 && interval.minutesFromNow <= 60)
       .slice(0, 4);
@@ -2433,10 +2433,14 @@ class WeatherService {
     return values;
   }
 
-  precipitationSummary({ localObserved, nearbyObserved, type }) {
-    if (localObserved) return `Recent radar suggests precipitation near your selected location.${nearbyObserved ? " A nearby station also reports it." : ""}`;
-    if (nearbyObserved) return `A nearby station recently reported ${type.toLowerCase()}. Conditions at your location may differ.`;
-    return "Current precipitation at your location is unconfirmed.";
+  precipitationSummary({ localObserved, nearbyObserved, forecastCurrent, shortTerm, type }) {
+    if (localObserved) return `Radar suggests ${type.toLowerCase()} near your location.`;
+    if (nearbyObserved) return `${type} reported nearby. Conditions may differ at your location.`;
+    if (shortTerm?.source === "minutely" && shortTerm.meaningful) {
+      return `${type} is ${shortTerm.futureHasAmounts ? "forecast" : "possible"} this hour.`;
+    }
+    if (forecastCurrent) return `Forecast calls for ${type.toLowerCase()} this hour.`;
+    return `${type} is possible this hour.`;
   }
 
   precipitationChartMessage({ localObserved, nearbyObserved, forecastCurrent, shortTerm, type }) {
@@ -2476,13 +2480,19 @@ class WeatherService {
       const firstChance = intervals.findIndex((interval) => interval.chance >= SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD);
       if (firstChance < 0) return "No estimate";
       let lastChance = intervals[firstChance];
+      let endingShown = false;
+      let endingMinutes = null;
       for (let index = firstChance + 1; index < intervals.length; index += 1) {
-        if (intervals[index].minutesFromNow - lastChance.minutesFromNow > 20
-          || intervals[index].chance < SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD) break;
+        if (intervals[index].minutesFromNow - lastChance.minutesFromNow > 20) break;
+        if (intervals[index].chance < SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD) {
+          endingShown = true;
+          endingMinutes = intervals[index].minutesFromNow;
+          break;
+        }
         lastChance = intervals[index];
       }
-      const minutes = Math.max(15, Math.round((lastChance.minutesFromNow - intervals[firstChance].minutesFromNow + 15) / 15) * 15);
-      return `${minutes} min (chance)`;
+      const minutes = Math.max(15, (endingShown ? Math.round(endingMinutes / 15) : Math.ceil(lastChance.minutesFromNow / 15)) * 15);
+      return `${endingShown ? "~" : ""}${minutes}${endingShown ? "" : "+"} min left (chance)`;
     }
     if (occurringNow && !wet(intervals[0])) {
       return "Under 15 min";
