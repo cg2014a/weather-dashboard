@@ -132,6 +132,7 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .dew-status.miserable { background: #fee2e2; color: #991b1b; }
 .stat-row.warning strong { color: var(--orange); }
 .precip-card { display: grid; grid-template-columns: minmax(112px, .88fr) minmax(170px, 1.45fr); align-items: center; gap: 12px; padding: 11px 12px; }
+.precip-card.has-forecast-bars { grid-template-columns: minmax(0, 1fr); }
 .precip-card[hidden] { display: none; }
 .precip-card-main { display: grid; grid-template-columns: 28px 1fr; gap: 9px; align-items: start; min-width: 0; }
 .precip-card-main img { width: 28px; height: 28px; }
@@ -139,7 +140,16 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .precip-card p { margin: 0; color: var(--muted); font-size: .74rem; line-height: 1.25; }
 .precip-amounts { min-width: 0; padding-top: 0; }
 .precip-timeline { display: grid; gap: 3px; min-width: 0; }
-.precip-duration { margin: 2px 0 0 30px !important; font-size: .7rem !important; font-weight: 750; }
+.precip-duration { margin: 0 0 6px !important; font-size: .7rem !important; font-weight: 750; }
+.forecast-precip-chart { min-width: 0; margin-top: 10px; }
+.forecast-precip-heading { margin: 0 0 5px !important; font-size: .7rem !important; font-weight: 800; }
+.forecast-precip-bars { display: flex; gap: 7px; min-width: 0; }
+.forecast-precip-column { display: grid; grid-template-rows: 15px 55px 15px; gap: 4px; min-width: 0; flex: 1; text-align: center; }
+.forecast-precip-column strong { font-size: .66rem; line-height: 1.2; white-space: nowrap; }
+.forecast-precip-track { display: flex; align-items: end; justify-content: center; height: 55px; border-bottom: 1px solid var(--line); background: rgba(26, 115, 232, .07); }
+.forecast-precip-fill { display: block; width: min(34px, 72%); border-radius: 4px 4px 0 0; background: var(--blue); }
+.forecast-precip-time { color: var(--muted); font-size: .62rem; white-space: nowrap; }
+.forecast-precip-note { margin: 8px 0 0 !important; color: var(--muted); font-size: .68rem !important; }
 .precip-chart-title { color: #0b7ff3; font-size: .62rem; font-weight: 850; line-height: 1.1; text-align: left; padding-left: 30px; }
 .precip-chart-title::before { content: none; }
 .precip-plot { display: grid; grid-template-columns: 39px minmax(0, 1fr); min-width: 0; padding-top: 0; }
@@ -633,8 +643,13 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .modern-precip-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 :root.layout-modern .modern-precip-chip { display: grid; gap: 3px; min-width: 0; padding: 9px 8px; border: 1px solid rgba(219, 236, 248, .22); border-radius: 12px; background: var(--modern-card-strong); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .07); }
 :root.layout-modern .modern-precip-chip span { color: var(--modern-text-dim); font-size: .61rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-:root.layout-modern .modern-precip-chip strong { overflow: hidden; color: var(--modern-text); font-size: .82rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-:root.layout-modern .modern-precip-chip:last-child strong { white-space: normal; }
+:root.layout-modern .modern-precip-chip strong { color: var(--modern-text); font-size: .82rem; line-height: 1.2; overflow-wrap: anywhere; }
+:root.layout-modern .forecast-precip-heading,
+:root.layout-modern .forecast-precip-column strong { color: var(--modern-text); }
+:root.layout-modern .forecast-precip-time,
+:root.layout-modern .forecast-precip-note { color: var(--modern-text-muted); }
+:root.layout-modern .forecast-precip-track { border-bottom-color: rgba(184, 201, 216, .28); background: rgba(54, 169, 225, .1); }
+:root.layout-modern .forecast-precip-fill { background: var(--modern-rain); }
 :root.layout-modern .precip-chart-title { color: var(--modern-text); }
 :root.layout-modern .precip-bars { border-bottom-color: rgba(184, 201, 216, .28); background-image: linear-gradient(to bottom, rgba(54, 169, 225, .16) 1px, transparent 1px), linear-gradient(to right, rgba(54, 169, 225, .16) 1px, transparent 1px), linear-gradient(to right, rgba(54, 169, 225, .08) 1px, transparent 1px); }
 :root.layout-modern .precip-curve-area { fill: rgba(54, 169, 225, .2); }
