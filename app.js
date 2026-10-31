@@ -3058,7 +3058,7 @@ function applyLayout(layout) {
   document.documentElement.classList.toggle("layout-classic", !isModern);
   document.documentElement.classList.toggle("theme-dark", selectedTheme === "dark");
   const outlookTitle = elements.currentOutlook?.querySelector("h2");
-  if (outlookTitle) outlookTitle.textContent = "What to expect";
+  if (outlookTitle) outlookTitle.textContent = "Weather Ahead";
   const dailyTitle = document.getElementById("daily-title");
   if (dailyTitle) dailyTitle.textContent = "7-Day Forecast";
   if (elements.currentOutlook) {
