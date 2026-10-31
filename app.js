@@ -2423,10 +2423,10 @@ class WeatherService {
       return `${type} is occurring now.${nearbySupport}`;
     }
     if (currentConditionPrecip) {
-      if (shortTerm.source === "minutely" && shortTerm.futureHasAmounts) return `${type} now; forecast to continue.${nearbySupport}`;
-      if (shortTerm.source === "minutely" && shortTerm.futureMeaningful) return `${type} now; more possible within the hour.${nearbySupport}`;
-      if (shortTerm.source === "minutely") return `${type} now; may end soon.${nearbySupport}`;
-      return `${type} now.${nearbySupport}`;
+      if (shortTerm.source === "minutely" && shortTerm.futureHasAmounts) return `${type} is occurring now and expected to continue.${nearbySupport}`;
+      if (shortTerm.source === "minutely" && shortTerm.futureMeaningful) return `${type} is occurring now and may continue over the next hour.${nearbySupport}`;
+      if (shortTerm.source === "minutely") return `${type} is occurring now and may end soon.${nearbySupport}`;
+      return `${type} is occurring now.${nearbySupport}`;
     }
     if (shortTerm.source === "minutely") {
       if (shortTerm.arrivalMinutes !== null) {
@@ -2448,8 +2448,8 @@ class WeatherService {
       return `${intensity} now`;
     }
     if (currentConditionPrecip) {
-      if (shortTerm.source === "minutely" && shortTerm.futureHasAmounts) return `${type} now · forecast to continue`;
-      if (shortTerm.source === "minutely" && shortTerm.futureMeaningful) return `${type} now · more possible within the hour`;
+      if (shortTerm.source === "minutely" && shortTerm.futureHasAmounts) return `${type} now · expected to continue`;
+      if (shortTerm.source === "minutely" && shortTerm.futureMeaningful) return `${type} now · may continue over the next hour`;
       if (shortTerm.source === "minutely") return `${type} now · may end soon`;
       return `${type} now`;
     }
