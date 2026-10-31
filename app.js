@@ -1672,31 +1672,20 @@ class WeatherService {
     const modelCurrentPrecip = currentEvidence.source === "open-meteo" && currentEvidence.observed;
     const forecastCurrent = modelCurrentPrecip || this.isPrecipCondition(currentPeriod?.shortForecast || "");
     const nearbyObserved = this.isNearbyPrecipActivelyOccurring(observation);
-    let type = this.shortTermPrecipType(shortTerm, currentPeriod, hourlyPeriods, supplemental);
-    if (forecastCurrent && this.isPrecipCondition(currentPeriod?.shortForecast)) type = this.precipType(currentPeriod.shortForecast);
-    if (localObserved) type = this.currentPrecipitationType(supplemental, currentPeriod, latestInterval, currentEvidence.source);
-    const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
-    const active = localObserved || nearbyObserved || forecastCurrent || shortTerm.meaningful;
-    const timeline = shortTerm.timeline;
     const currentCondition = this.currentConditionText(currentPeriod, observation);
-    const summary = this.isCurrentPrecipCondition(currentCondition) ? `Now: ${currentCondition}` : "";
-    const minutelyIntervals = this.precipMinutelyIntervals(supplemental, 9);
-    const currentInterval = minutelyIntervals
-      .filter((interval) => Number.isFinite(interval.minutesFromNow) && interval.minutesFromNow <= 0 && interval.minutesFromNow >= -15)
-      .sort((a, b) => b.minutesFromNow - a.minutesFromNow)[0];
-    const forecastIntervals = minutelyIntervals
+    const currentConditionPrecip = this.isCurrentPrecipCondition(currentCondition);
+    let type = this.shortTermPrecipType(shortTerm, currentPeriod, hourlyPeriods, supplemental);
+    if (currentConditionPrecip) type = this.precipType(currentCondition);
+    const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
+    const active = currentConditionPrecip;
+    const timeline = shortTerm.timeline;
+    const summary = currentConditionPrecip ? `Now: ${currentCondition}` : "";
+    const forecastIntervals = this.precipMinutelyIntervals(supplemental, 9)
       .filter((interval) => Number.isFinite(interval.minutesFromNow) && interval.minutesFromNow > 0 && interval.minutesFromNow <= 60)
       .slice(0, 4);
-    const currentChartInterval = {
-      timestamp: Date.now(),
-      minutesFromNow: 0,
-      chance: currentInterval?.chanceAvailable
-        ? currentInterval.chance
-        : this.firstNumber(currentPeriod?.probabilityOfPrecipitation?.value, supplemental?.gridPrecipChance, supplemental?.precipChance),
-      amount: currentEvidence.source === "iem-n0q" ? null : currentAmount,
-      isCurrent: true
-    };
-    const duration = this.precipDurationEstimate(supplemental, localObserved, forecastIntervals);
+    const duration = currentConditionPrecip
+      ? this.precipDurationEstimate(supplemental, true, forecastIntervals) || this.hourlyPrecipDurationEstimate(hourlyPeriods)
+      : null;
     const forecastMode = forecastIntervals.some((interval) => interval.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN)
       || !Array.isArray(supplemental?.minutelyPrecipChances) || !supplemental.minutelyPrecipChances.length
       ? "amount" : "chance";
@@ -1717,9 +1706,9 @@ class WeatherService {
       currentObserved: localObserved,
       nearbyObserved,
       forecastCurrent,
-      currentConditionShowsPrecip: Boolean(summary),
+      currentCondition,
+      currentConditionShowsPrecip: currentConditionPrecip,
       duration,
-      currentChartInterval,
       forecastIntervals,
       forecastMode,
       forecastTimezone: supplemental?.weatherTimezone || null,
@@ -2480,51 +2469,38 @@ class WeatherService {
         && interval.minutesFromNow > 0
         && interval.minutesFromNow <= 60)
       .sort((a, b) => a.minutesFromNow - b.minutesFromNow);
-    if (!intervals.length || (occurringNow && intervals[0].minutesFromNow > 20)) return "No estimate";
-
+    if (!occurringNow || !intervals.length || intervals[0].minutesFromNow > 20) return null;
     const wet = (interval) => interval.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN;
-    const startIndex = occurringNow ? 0 : intervals.findIndex(wet);
-    if (startIndex < 0 || (occurringNow && !wet(intervals[0]) && intervals[0].chance >= SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD)) {
-      const firstChance = intervals.findIndex((interval) => interval.chance >= SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD);
-      if (firstChance < 0) return "No estimate";
-      let lastChance = intervals[firstChance];
-      let endingShown = false;
-      let endingMinutes = null;
-      for (let index = firstChance + 1; index < intervals.length; index += 1) {
-        if (intervals[index].minutesFromNow - lastChance.minutesFromNow > 20) break;
-        if (intervals[index].chance < SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD) {
-          endingShown = true;
-          endingMinutes = intervals[index].minutesFromNow;
-          break;
-        }
-        lastChance = intervals[index];
-      }
-      const minutes = Math.max(15, (endingShown ? Math.round(endingMinutes / 15) : Math.ceil(lastChance.minutesFromNow / 15)) * 15);
-      return `${endingShown ? "~" : ""}${minutes}${endingShown ? "" : "+"} min left`;
-    }
-    if (occurringNow && !wet(intervals[0])) {
-      return "Under 15 min";
-    }
-
-    let lastWet = null;
-    let endingShown = false;
-    for (let index = startIndex; index < intervals.length; index += 1) {
-      if (index > startIndex && intervals[index].minutesFromNow - intervals[index - 1].minutesFromNow > 20) break;
+    if (!wet(intervals[0])) return null;
+    let lastWet = intervals[0];
+    let endingMinutes = null;
+    for (let index = 1; index < intervals.length; index += 1) {
+      if (intervals[index].minutesFromNow - intervals[index - 1].minutesFromNow > 20) break;
       if (!wet(intervals[index])) {
-        endingShown = intervals[index].chance < SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD;
+        endingMinutes = intervals[index].minutesFromNow;
         break;
       }
       lastWet = intervals[index];
     }
-    if (!lastWet) return "No estimate";
+    const minutes = endingMinutes ?? lastWet.minutesFromNow;
+    const rounded = Math.max(15, (endingMinutes === null ? Math.floor(minutes / 15) : Math.round(minutes / 15)) * 15);
+    return `${endingMinutes === null ? "" : "~"}${rounded}${endingMinutes === null ? "+" : ""} min left`;
+  }
 
-    const minutes = occurringNow
-      ? lastWet.minutesFromNow
-      : lastWet.minutesFromNow - intervals[startIndex].minutesFromNow + 15;
-    const rounded = minutes < 15
-      ? Math.max(5, Math.round(minutes / 5) * 5)
-      : Math.max(15, (endingShown ? Math.round(minutes / 15) : Math.floor(minutes / 15)) * 15);
-    return `${endingShown ? "~" : ""}${rounded}${endingShown ? "" : "+"} min${occurringNow ? " left" : ""}`;
+  hourlyPrecipDurationEstimate(hourlyPeriods = []) {
+    const current = hourlyPeriods[0];
+    if (!current?.endTime || !this.isCurrentPrecipCondition(current.shortForecast)) return null;
+    const now = Date.now();
+    const firstDry = hourlyPeriods.slice(1).find((period) => !this.isCurrentPrecipCondition(period.shortForecast));
+    const dryStart = firstDry ? Date.parse(firstDry.startTime || "") : NaN;
+    if (Number.isFinite(dryStart) && dryStart > now) {
+      const minutes = Math.max(15, Math.round((dryStart - now) / 900000) * 15);
+      return `~${minutes} min left`;
+    }
+    const currentEnd = Date.parse(current.endTime);
+    if (!Number.isFinite(currentEnd) || currentEnd <= now) return null;
+    const minutes = Math.max(15, Math.ceil((currentEnd - now) / 900000) * 15);
+    return `${minutes}+ min left`;
   }
 
   localObservedConditionText(observation) {
@@ -3816,7 +3792,8 @@ function renderPrecipitation(precipitation) {
   }
 
   elements.precipCard.hidden = false;
-  elements.precipCard.classList.add("has-forecast-line");
+  elements.precipCard.classList.remove("has-forecast-line");
+  elements.precipCard.classList.add("has-forecast-bars");
   setIcon(elements.precipIcon, precipitation.icon, "");
   setText("precipSummary", precipitation.summary);
   elements.precipSummary.hidden = !precipitation.summary;
@@ -3824,12 +3801,14 @@ function renderPrecipitation(precipitation) {
   if (selectedLayout !== "classic") {
     elements.precipAmounts.appendChild(renderModernPrecipitationChips(precipitation));
   } else {
-    const duration = document.createElement("p");
-    duration.className = "precip-duration";
-    duration.textContent = `Duration: ${modernPrecipitationDuration(precipitation)}`;
-    elements.precipAmounts.appendChild(duration);
+    if (precipitation.duration) {
+      const duration = document.createElement("p");
+      duration.className = "precip-duration";
+      duration.textContent = `Duration: ${precipitation.duration}`;
+      elements.precipAmounts.appendChild(duration);
+    }
   }
-  elements.precipAmounts.appendChild(renderForecastPrecipLine(precipitation));
+  elements.precipAmounts.appendChild(renderForecastPrecipBars(precipitation));
 }
 
 function renderModernPrecipitationChips(precipitation) {
@@ -3850,7 +3829,8 @@ function renderModernPrecipitationChips(precipitation) {
   const precipitationDescriptor = modernPrecipitationDescriptor(precipitation);
   addChip("Timing", modernPrecipitationTiming(precipitation));
   addChip(precipitationDescriptor.label, precipitationDescriptor.value);
-  addChip("Duration", modernPrecipitationDuration(precipitation));
+  if (precipitation.duration) addChip("Duration", precipitation.duration);
+  else chips.classList.add("without-duration");
   return chips;
 }
 
@@ -3867,32 +3847,25 @@ function modernPrecipitationTiming(precipitation) {
 
 function modernPrecipitationDescriptor(precipitation) {
   const type = precipitation.type || "Precipitation";
-  const amounts = [precipitation.currentAmount, ...(precipitation.timeline || []).map((interval) => interval.amount)]
-    .map(Number)
-    .filter(Number.isFinite);
-  const peakAmount = Math.max(...amounts, 0);
-  const intensity = precipIntensityFromAmount(peakAmount);
-  if (intensity !== "Dry") return { label: "Forecast intensity", value: intensity === "Drizzle" ? "Light" : intensity };
+  const intensity = precipitation.currentCondition?.match(/\b(light|moderate|heavy)\b/i)?.[0];
+  if (intensity) return { label: "Intensity", value: intensity[0].toUpperCase() + intensity.slice(1).toLowerCase() };
   return { label: "Type", value: type === "Sleet" ? "Mixed" : type };
 }
 
 function modernPrecipitationDuration(precipitation) {
-  return precipitation.duration || "No estimate";
+  return precipitation.duration || "";
 }
 
-function renderForecastPrecipLine(precipitation) {
+function renderForecastPrecipBars(precipitation) {
   const chart = document.createElement("div");
   const heading = document.createElement("p");
   chart.className = "forecast-precip-chart";
   heading.className = "forecast-precip-heading";
-  const forecastIntervals = Array.isArray(precipitation.forecastIntervals) ? precipitation.forecastIntervals : [];
-  const intervals = forecastIntervals.length && precipitation.currentChartInterval
-    ? [precipitation.currentChartInterval, ...forecastIntervals]
-    : forecastIntervals;
+  const intervals = precipitation.forecastIntervals || [];
   const isAmount = precipitation.forecastMode === "amount";
   heading.textContent = isAmount
-    ? "Current + next hour · amount every 15 min"
-    : "Current + next hour · chance every 15 min";
+    ? "Forecast amount · each bar is 15 min"
+    : "Forecast chance · each bar is 15 min";
   chart.appendChild(heading);
   if (!intervals.length) {
     const unavailable = document.createElement("p");
@@ -3902,51 +3875,30 @@ function renderForecastPrecipLine(precipitation) {
     return chart;
   }
 
-  const svgNamespace = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNamespace, "svg");
-  const addSvg = (tag, attributes, className = "") => {
-    const element = document.createElementNS(svgNamespace, tag);
-    Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, String(value)));
-    if (className) element.setAttribute("class", className);
-    svg.appendChild(element);
-    return element;
-  };
-  const amounts = intervals.map((interval) => interval.amount == null ? null : Math.max(0, Number(interval.amount) || 0));
-  const chances = intervals.map((interval) => interval.chance == null ? null : Math.max(0, Math.min(100, Number(interval.chance) || 0)));
-  const maxAmount = Math.max(...amounts.filter((value) => value !== null), 0);
-  const amountScale = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2].find((step) => step >= maxAmount)
-    || Math.ceil(maxAmount);
-  const scale = isAmount ? amountScale : 100;
-  const xAt = (index) => 34 + (252 * index) / Math.max(1, intervals.length - 1);
-  const yAt = (value) => 55 - (Math.min(scale, value) / scale) * 32;
-  const points = intervals.map((interval, index) => {
-    const measurement = isAmount ? amounts[index] : chances[index];
-    return {
-      x: xAt(index),
-      y: measurement === null ? 39 : yAt(measurement),
-      missing: measurement === null,
-      value: measurement === null ? "—" : isAmount
-        ? measurement < CURRENT_PRECIP_AMOUNT_THRESHOLD_IN ? "0 in" : measurement < 0.01 ? "<0.01 in" : `${measurement.toFixed(2)} in`
-        : `${Math.round(measurement)}%`,
-      time: interval.isCurrent ? "Current" : new Date(interval.timestamp).toLocaleTimeString([], {
-        hour: "numeric", minute: "2-digit", timeZone: precipitation.forecastTimezone || undefined
-      })
-    };
+  const bars = document.createElement("div");
+  bars.className = "forecast-precip-bars";
+  intervals.forEach((interval) => {
+    const column = document.createElement("div");
+    const value = document.createElement("strong");
+    const track = document.createElement("div");
+    const fill = document.createElement("span");
+    const time = document.createElement("span");
+    const amount = Number(interval.amount) || 0;
+    const chance = Math.max(0, Math.min(100, Number(interval.chance) || 0));
+    column.className = "forecast-precip-column";
+    value.textContent = isAmount ? (amount < CURRENT_PRECIP_AMOUNT_THRESHOLD_IN ? "0 in" : amount < 0.01 ? "<0.01 in" : `${amount.toFixed(2)} in`) : `${Math.round(chance)}%`;
+    track.className = "forecast-precip-track";
+    fill.className = "forecast-precip-fill";
+    fill.style.height = `${isAmount ? precipAmountBarHeight(amount) : chance}%`;
+    time.className = "forecast-precip-time";
+    time.textContent = new Date(interval.timestamp).toLocaleTimeString([], {
+      hour: "numeric", minute: "2-digit", timeZone: precipitation.forecastTimezone || undefined
+    });
+    track.appendChild(fill);
+    column.append(value, track, time);
+    bars.appendChild(column);
   });
-  svg.classList.add("forecast-precip-line-chart");
-  svg.setAttribute("viewBox", "0 0 320 76");
-  svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", `${heading.textContent}. ${points.map((point) => `${point.time}: ${point.value}`).join("; ")}.`);
-  [23, 39, 55].forEach((y) => addSvg("line", { x1: 18, y1: y, x2: 302, y2: y }, "forecast-precip-grid"));
-  addSvg("polyline", { points: points.filter((point) => !point.missing).map((point) => `${point.x},${point.y}`).join(" ") }, "forecast-precip-line");
-  points.forEach((point) => {
-    addSvg("circle", { cx: point.x, cy: point.y, r: 4 }, point.missing ? "forecast-precip-point-unavailable" : "forecast-precip-point");
-    const value = addSvg("text", { x: point.x, y: point.y - 10, "text-anchor": "middle" }, "forecast-precip-value");
-    value.textContent = point.value;
-    const time = addSvg("text", { x: point.x, y: 71, "text-anchor": "middle" }, "forecast-precip-time");
-    time.textContent = point.time;
-  });
-  chart.appendChild(svg);
+  chart.appendChild(bars);
   return chart;
 }
 
