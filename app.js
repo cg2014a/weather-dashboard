@@ -1690,6 +1690,7 @@ class WeatherService {
       currentSource: currentEvidence.source,
       currentObserved: localObserved,
       currentConditionPrecip,
+      duration: this.precipDurationEstimate(supplemental, localObserved || currentConditionPrecip),
       arrivalMinutes: shortTerm.arrivalMinutes,
       futureMeaningful: shortTerm.futureMeaningful,
       futureHasAmounts: shortTerm.futureHasAmounts,
@@ -2470,6 +2471,42 @@ class WeatherService {
   precipArrivalLabel(minutes) {
     if (!Number.isFinite(minutes) || minutes <= 15) return "within 15 min";
     return `in about ${Math.round(minutes / 15) * 15} min`;
+  }
+
+  precipDurationEstimate(supplemental, occurringNow) {
+    const intervals = this.precipMinutelyIntervals(supplemental)
+      .filter((interval) => Number.isFinite(interval.minutesFromNow)
+        && interval.minutesFromNow > 0
+        && interval.minutesFromNow <= 60)
+      .sort((a, b) => a.minutesFromNow - b.minutesFromNow);
+    if (!intervals.length || (occurringNow && intervals[0].minutesFromNow > 20)) return "No estimate";
+
+    const wet = (interval) => interval.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN;
+    const startIndex = occurringNow ? 0 : intervals.findIndex(wet);
+    if (startIndex < 0) return "No estimate";
+    if (occurringNow && !wet(intervals[0])) {
+      return intervals[0].chance >= SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD ? "No estimate" : "Under 15 min";
+    }
+
+    let lastWet = null;
+    let endingShown = false;
+    for (let index = startIndex; index < intervals.length; index += 1) {
+      if (index > startIndex && intervals[index].minutesFromNow - intervals[index - 1].minutesFromNow > 20) break;
+      if (!wet(intervals[index])) {
+        endingShown = intervals[index].chance < SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD;
+        break;
+      }
+      lastWet = intervals[index];
+    }
+    if (!lastWet) return "No estimate";
+
+    const minutes = occurringNow
+      ? lastWet.minutesFromNow
+      : lastWet.minutesFromNow - intervals[startIndex].minutesFromNow + 15;
+    const rounded = minutes < 15
+      ? Math.max(5, Math.round(minutes / 5) * 5)
+      : Math.max(15, (endingShown ? Math.round(minutes / 15) : Math.floor(minutes / 15)) * 15);
+    return `${endingShown ? "~" : ""}${rounded}${endingShown ? "" : "+"} min${occurringNow ? " left" : ""}`;
   }
 
   localObservedConditionText(observation) {
@@ -3803,15 +3840,7 @@ function modernPrecipitationDescriptor(precipitation) {
 }
 
 function modernPrecipitationDuration(precipitation) {
-  if (precipitation.currentObserved) {
-    if (precipitation.timelineSource === "minutely") {
-      if (precipitation.futureMeaningful && precipitation.futureHasAmounts) return "Continuing";
-      if (!precipitation.futureMeaningful) return "Ending soon";
-    }
-    return "Within hour";
-  }
-  if (precipitation.currentConditionPrecip) return precipitation.futureHasAmounts ? "Continuing" : "Short-lived";
-  return Number.isFinite(Number(precipitation.arrivalMinutes)) ? "Short-lived" : "Within hour";
+  return precipitation.duration || "No estimate";
 }
 
 function renderPrecipTimeline(precipitation) {
