@@ -13,6 +13,7 @@ function loadApp() {
       return {
         tag,
         children: [],
+        classList: { values: new Set(), add(value) { this.values.add(value); }, contains(value) { return this.values.has(value); } },
         append(...children) { this.children.push(...children); },
         appendChild(child) { this.children.push(child); },
         replaceChildren(...children) { this.children = children; }
@@ -156,9 +157,12 @@ test("definite NWS rain forecast agrees in wording with a Light Rain current car
   assert.equal(precipitation.duration, "~60 min left");
 });
 
-test("both layouts render exactly three fields and no forecast chart", () => {
+test("rendering shows Duration only when a time is supported, with no forecast chart", () => {
   const { WeatherService, renderPrecipitation, elements } = loadApp();
-  const precipitation = card(new WeatherService(), { station: "Light Rain" });
+  const service = new WeatherService();
+  const precipitation = card(service, {
+    station: "Light Rain", chances: [70, 70, 10, 10], amounts: [0.02, 0.02, 0, 0]
+  });
   elements.precipCard = { hidden: true };
   elements.precipIcon = {};
   elements.precipSummary = {};
@@ -168,4 +172,10 @@ test("both layouts render exactly three fields and no forecast chart", () => {
   assert.equal(elements.precipAmounts.children.length, 1);
   const chips = elements.precipAmounts.children[0].children;
   assert.deepEqual(chips.map((chip) => chip.children[0].textContent), ["Timing", "Intensity", "Duration"]);
+
+  renderPrecipitation(card(service, { station: "Light Rain" }));
+  assert.equal(elements.precipAmounts.children.length, 1);
+  const shorterChips = elements.precipAmounts.children[0];
+  assert.deepEqual(shorterChips.children.map((chip) => chip.children[0].textContent), ["Timing", "Intensity"]);
+  assert.equal(shorterChips.classList.contains("without-duration"), true);
 });

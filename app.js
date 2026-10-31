@@ -3897,7 +3897,8 @@ function renderModernPrecipitationChips(precipitation) {
   const precipitationDescriptor = modernPrecipitationDescriptor(precipitation);
   addChip("Timing", modernPrecipitationTiming(precipitation));
   addChip(precipitationDescriptor.label, precipitationDescriptor.value);
-  addChip("Duration", precipitation.duration || "Uncertain");
+  if (precipitation.duration) addChip("Duration", precipitation.duration);
+  else chips.classList.add("without-duration");
   return chips;
 }
 

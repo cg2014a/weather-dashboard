@@ -141,6 +141,7 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .precip-timeline { display: grid; gap: 3px; min-width: 0; }
 .precip-duration { margin: 0 0 6px !important; font-size: .7rem !important; font-weight: 750; }
 .modern-precip-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.modern-precip-chips.without-duration { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .modern-precip-chip { display: grid; gap: 3px; min-width: 0; padding: 7px; border: 1px solid var(--line); border-radius: 9px; }
 .modern-precip-chip span { font-size: .58rem; font-weight: 800; text-transform: uppercase; }
 .modern-precip-chip strong { font-size: .72rem; overflow-wrap: anywhere; }
@@ -634,6 +635,7 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .precip-card p { font-size: .85rem; line-height: 1.4; }
 :root.layout-modern .precip-amounts { padding-top: 9px; }
 :root.layout-modern .modern-precip-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+:root.layout-modern .modern-precip-chips.without-duration { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 :root.layout-modern .modern-precip-chip { display: grid; gap: 3px; min-width: 0; padding: 9px 8px; border: 1px solid rgba(219, 236, 248, .22); border-radius: 12px; background: var(--modern-card-strong); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .07); }
 :root.layout-modern .modern-precip-chip span { color: var(--modern-text-dim); font-size: .61rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 :root.layout-modern .modern-precip-chip strong { color: var(--modern-text); font-size: .82rem; line-height: 1.2; overflow-wrap: anywhere; }
