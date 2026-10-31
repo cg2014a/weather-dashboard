@@ -1014,6 +1014,7 @@ class WeatherService {
       const dailySupplemental = this.dailyValuesFromHourly(hourly);
       return {
         temperature: this.numberOrNull(current.temperature_2m),
+        weatherTimezone: data.timezone || null,
         humidity: this.numberOrNull(current.relative_humidity_2m),
         dewPoint: this.numberOrNull(current.dew_point_2m),
         feelsLike: this.numberOrNull(current.apparent_temperature),
@@ -1705,6 +1706,7 @@ class WeatherService {
       duration,
       forecastIntervals,
       forecastMode,
+      forecastTimezone: supplemental?.weatherTimezone || null,
       arrivalMinutes: shortTerm.arrivalMinutes,
       futureMeaningful: shortTerm.futureMeaningful,
       futureHasAmounts: shortTerm.futureHasAmounts,
@@ -3776,7 +3778,7 @@ function renderPrecipitation(precipitation) {
   }
 
   elements.precipCard.hidden = false;
-  elements.precipCard.classList.add("has-forecast-bars");
+  elements.precipCard.classList.add("has-forecast-line");
   setIcon(elements.precipIcon, precipitation.icon, "");
   setText("precipSummary", precipitation.summary);
   elements.precipAmounts.replaceChildren();
@@ -3788,7 +3790,7 @@ function renderPrecipitation(precipitation) {
     duration.textContent = `Duration: ${modernPrecipitationDuration(precipitation)}`;
     elements.precipAmounts.appendChild(duration);
   }
-  elements.precipAmounts.appendChild(renderForecastPrecipBars(precipitation));
+  elements.precipAmounts.appendChild(renderForecastPrecipLine(precipitation));
 }
 
 function renderModernPrecipitationChips(precipitation) {
@@ -3838,16 +3840,16 @@ function modernPrecipitationDuration(precipitation) {
   return precipitation.duration || "No estimate";
 }
 
-function renderForecastPrecipBars(precipitation) {
+function renderForecastPrecipLine(precipitation) {
   const chart = document.createElement("div");
   const heading = document.createElement("p");
   chart.className = "forecast-precip-chart";
   heading.className = "forecast-precip-heading";
-  const intervals = precipitation.forecastIntervals || [];
+  const intervals = Array.isArray(precipitation.forecastIntervals) ? precipitation.forecastIntervals : [];
   const isAmount = precipitation.forecastMode === "amount";
   heading.textContent = isAmount
-    ? "Forecast amount · each bar is 15 min"
-    : "Forecast chance · each bar is 15 min";
+    ? "Next hour forecast · amount per 15 min"
+    : "Next hour forecast · chance every 15 min";
   chart.appendChild(heading);
   if (!intervals.length) {
     const unavailable = document.createElement("p");
@@ -3857,28 +3859,47 @@ function renderForecastPrecipBars(precipitation) {
     return chart;
   }
 
-  const bars = document.createElement("div");
-  bars.className = "forecast-precip-bars";
-  intervals.forEach((interval) => {
-    const column = document.createElement("div");
-    const value = document.createElement("strong");
-    const track = document.createElement("div");
-    const fill = document.createElement("span");
-    const time = document.createElement("span");
-    const amount = Number(interval.amount) || 0;
-    const chance = Math.max(0, Math.min(100, Number(interval.chance) || 0));
-    column.className = "forecast-precip-column";
-    value.textContent = isAmount ? (amount < CURRENT_PRECIP_AMOUNT_THRESHOLD_IN ? "0 in" : amount < 0.01 ? "<0.01 in" : `${amount.toFixed(2)} in`) : `${Math.round(chance)}%`;
-    track.className = "forecast-precip-track";
-    fill.className = "forecast-precip-fill";
-    fill.style.height = `${isAmount ? precipAmountBarHeight(amount) : chance}%`;
-    time.className = "forecast-precip-time";
-    time.textContent = new Date(interval.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    track.appendChild(fill);
-    column.append(value, track, time);
-    bars.appendChild(column);
+  const svgNamespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNamespace, "svg");
+  const addSvg = (tag, attributes, className = "") => {
+    const element = document.createElementNS(svgNamespace, tag);
+    Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, String(value)));
+    if (className) element.setAttribute("class", className);
+    svg.appendChild(element);
+    return element;
+  };
+  const amounts = intervals.map((interval) => Math.max(0, Number(interval.amount) || 0));
+  const chances = intervals.map((interval) => Math.max(0, Math.min(100, Number(interval.chance) || 0)));
+  const maxAmount = Math.max(...amounts, 0);
+  const amountScale = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2].find((step) => step >= maxAmount)
+    || Math.ceil(maxAmount);
+  const scale = isAmount ? amountScale : 100;
+  const xAt = (index) => 34 + (252 * index) / Math.max(1, intervals.length - 1);
+  const yAt = (value) => 82 - (Math.min(scale, value) / scale) * 50;
+  const points = intervals.map((interval, index) => ({
+    x: xAt(index),
+    y: yAt(isAmount ? amounts[index] : chances[index]),
+    value: isAmount
+      ? amounts[index] < CURRENT_PRECIP_AMOUNT_THRESHOLD_IN ? "0 in" : amounts[index] < 0.01 ? "<0.01 in" : `${amounts[index].toFixed(2)} in`
+      : `${Math.round(chances[index])}%`,
+    time: new Date(interval.timestamp).toLocaleTimeString([], {
+      hour: "numeric", minute: "2-digit", timeZone: precipitation.forecastTimezone || undefined
+    })
+  }));
+  svg.classList.add("forecast-precip-line-chart");
+  svg.setAttribute("viewBox", "0 0 320 108");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${heading.textContent}. ${points.map((point) => `${point.time}: ${point.value}`).join("; ")}.`);
+  [32, 57, 82].forEach((y) => addSvg("line", { x1: 18, y1: y, x2: 302, y2: y }, "forecast-precip-grid"));
+  addSvg("polyline", { points: points.map((point) => `${point.x},${point.y}`).join(" ") }, "forecast-precip-line");
+  points.forEach((point) => {
+    addSvg("circle", { cx: point.x, cy: point.y, r: 4 }, "forecast-precip-point");
+    const value = addSvg("text", { x: point.x, y: point.y - 10, "text-anchor": "middle" }, "forecast-precip-value");
+    value.textContent = point.value;
+    const time = addSvg("text", { x: point.x, y: 103, "text-anchor": "middle" }, "forecast-precip-time");
+    time.textContent = point.time;
   });
-  chart.appendChild(bars);
+  chart.appendChild(svg);
   return chart;
 }
 
