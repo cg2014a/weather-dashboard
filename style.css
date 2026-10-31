@@ -285,7 +285,7 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .day-allergen-pills .allergen-badge img { width: 13px; height: 13px; }
 .day-allergen-pills .allergen-badge strong { display: inline; color: #202124; font-size: .7rem; text-transform: none; }
 
-.current-outlook { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; margin: 0 20px 18px; padding: 12px; border-top: 1px solid var(--line); border-radius: 16px; background: #f7f9fd; }
+.current-outlook { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; min-width: 0; margin: 0; padding: 14px; border: 1px solid rgba(218, 220, 224, .95); border-radius: 16px; background: var(--card); box-shadow: var(--shadow); }
 .current-outlook img { width: 32px; height: 32px; }
 .current-outlook h2 { margin: 0 0 4px; font-size: .92rem; font-weight: 850; }
 .current-outlook p { margin: 0; color: #3c4043; font-size: .88rem; line-height: 1.36; }
@@ -452,7 +452,6 @@ body.pollen-open { overflow: hidden; }
   .app-kicker { margin-top: 0; font-size: .7rem; }
   h1 { font-size: 1.18rem; }
   .current-content { grid-template-columns: minmax(0, 1fr) clamp(152px, 44vw, 178px); gap: 8px; padding: 22px 10px 5px; }
-  .current-outlook { margin-left: 14px; margin-right: 14px; }
   .expanded-weather { margin-left: 12px; margin-right: 12px; }
   .current-stats-panel { width: 100%; margin-top: 0; }
   .temp-row { gap: 8px; }

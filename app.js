@@ -3101,8 +3101,8 @@ function applyLayout(layout) {
       }
       if (sevenDay && radarBubble) elements.currentOutlook.after(radarBubble);
     } else {
-      elements.currentCard.insertBefore(elements.currentOutlook, elements.expandedWeather);
       elements.alertCard?.after(elements.precipCard);
+      elements.precipCard?.after(elements.currentOutlook);
       if (sevenDay && radarBubble) sevenDay.after(radarBubble);
     }
   }
@@ -3409,12 +3409,21 @@ function getDeviceLocation({ userInitiated = false } = {}) {
         });
       },
       () => resolve(null),
-      { enableHighAccuracy: false, maximumAge: 10 * 60 * 1000, timeout: 8000 }
+      { enableHighAccuracy: false, maximumAge: 0, timeout: 8000 }
     );
   });
 }
 
 async function locationForDashboard() {
+  if (currentLocation?.isDeviceLocation && autoLocationEnabled) {
+    const detectedLocation = await getDeviceLocation();
+    if (!currentLocation?.isDeviceLocation || !autoLocationEnabled) return currentLocation;
+    if (isValidLocation(detectedLocation)) {
+      saveLocation(detectedLocation);
+      return detectedLocation;
+    }
+    return { ...currentLocation, label: "Last known location" };
+  }
   if (hasSavedLocation()) return currentLocation;
   if (!autoLocationEnabled || hasRequestedDeviceLocation()) return isValidLocation(currentLocation) ? currentLocation : DEFAULT_LOCATION;
   markDeviceLocationRequested();
@@ -4671,7 +4680,7 @@ function bindInteractions() {
   elements.autoLocationToggle.addEventListener("change", () => {
     saveAutoLocationEnabled(elements.autoLocationToggle.checked);
     elements.locationStatus.textContent = autoLocationEnabled
-      ? "Current location may be used on the first launch. Use the button below to refresh it later."
+      ? "Device location refreshes when the app opens or weather updates."
       : "Automatic location is off. The ZIP or city above will be used.";
   });
   elements.dailyLayoutToggle.addEventListener("change", () => {
@@ -4836,10 +4845,11 @@ function checkForAppUpdate(force = false) {
     .then((source) => {
       const latestVersion = source.match(/SKYSTATION_VERSION\s*=\s*["']([^"']+)["']/)?.[1];
       if (!latestVersion || latestVersion === self.SKYSTATION_VERSION) return false;
-      const reloadKey = "skystation-app-update-attempt";
+      const reloadKey = `skystation-app-update-attempt-${latestVersion}`;
       try {
-        if (sessionStorage.getItem(reloadKey) === latestVersion) return false;
-        sessionStorage.setItem(reloadKey, latestVersion);
+        const lastAttempt = Number(sessionStorage.getItem(reloadKey));
+        if (lastAttempt > 0 && Date.now() - lastAttempt < 60 * 1000) return false;
+        sessionStorage.setItem(reloadKey, String(Date.now()));
       } catch {
         // Updating still works when session storage is unavailable.
       }
@@ -4855,7 +4865,9 @@ function checkForAppUpdate(force = false) {
 
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" }).catch(() => {});
+    navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" })
+      .then((registration) => registration.update())
+      .catch(() => {});
   }
 }
 

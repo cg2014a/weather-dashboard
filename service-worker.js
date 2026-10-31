@@ -1,13 +1,14 @@
 importScripts("./version.js");
 
 const CACHE_NAME = self.SKYSTATION_CACHE_NAME;
+const SHELL_VERSION = encodeURIComponent(self.SKYSTATION_VERSION);
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./version.js",
-  "./style.css",
-  "./atmospore-client.js",
-  "./app.js",
+  `./version.js?${SHELL_VERSION}`,
+  `./style.css?${SHELL_VERSION}`,
+  `./atmospore-client.js?${SHELL_VERSION}`,
+  `./app.js?${SHELL_VERSION}`,
   "./manifest.json",
   "./offline.html",
   "./assets/apple-touch-icon.svg",
@@ -45,9 +46,18 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .then((openClients) => Promise.all(openClients.map((client) => {
+        if (typeof client.navigate !== "function") return null;
+        const url = new URL(client.url);
+        if (!url.href.startsWith(self.registration.scope) || url.searchParams.get("appVersion") === self.SKYSTATION_VERSION) return null;
+        url.searchParams.set("appVersion", self.SKYSTATION_VERSION);
+        return client.navigate(url.href).catch(() => null);
+      })))
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {

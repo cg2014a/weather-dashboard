@@ -12,8 +12,8 @@
     <link rel="manifest" href="manifest.json" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.svg" />
     <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="style.css" />
-    <script src="version.js"></script>
+    <link rel="stylesheet" href="style.css?v2-48" />
+    <script src="version.js?v2-48"></script>
   </head>
   <body>
     <div class="pull-refresh" id="pullRefresh" aria-hidden="true">Release to refresh</div>
@@ -43,13 +43,6 @@
             </div>
           </div>
           <div class="allergen-alerts" id="allergenAlerts" aria-label="High pollen and allergen alerts" hidden></div>
-          <section class="current-outlook" id="currentOutlook" aria-label="Weather outlook">
-            <img id="outlookIcon" src="icons/weather-cloud.svg" alt="" />
-            <div>
-              <h2 id="currentOutlookTitle">Weather Ahead</h2>
-              <p id="currentNarrative">Weather data is loading.</p>
-            </div>
-          </section>
           <section class="expanded-weather" id="expandedWeather" hidden>
             <section class="forecast-card hourly-panel" aria-labelledby="hourly-title">
               <div class="section-heading">
@@ -84,6 +77,14 @@
             </div>
           </div>
           <div class="precip-amounts" id="precipAmounts"></div>
+        </section>
+
+        <section class="current-outlook" id="currentOutlook" aria-label="Weather outlook">
+          <img id="outlookIcon" src="icons/weather-cloud.svg" alt="" />
+          <div>
+            <h2 id="currentOutlookTitle">Weather Ahead</h2>
+            <p id="currentNarrative">Weather data is loading.</p>
+          </div>
         </section>
 
         <section class="forecast-card seven-day" aria-labelledby="daily-title">
@@ -221,8 +222,8 @@
         </section>
       </form>
     </section>
-    <script src="atmospore-client.js"></script>
-    <script src="app.js"></script>
+    <script src="atmospore-client.js?v2-48"></script>
+    <script src="app.js?v2-48"></script>
   </body>
 </html>
 
