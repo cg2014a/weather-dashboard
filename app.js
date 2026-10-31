@@ -18,6 +18,7 @@ const CURRENT_PRECIP_OBSERVATION_FRESHNESS_MINUTES = 20;
 const SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD = 40;
 const HOURLY_PRECIP_CHANCE_THRESHOLD = 50;
 const HOURLY_PRECIP_AMOUNT_THRESHOLD_IN = 0.01;
+const WEATHER_REFRESH_MAX_AGE_MS = 10 * 60 * 1000;
 const PRECIP_CURVE_TENSION = 0.7;
 // SkyStation forecast-impact heuristics. These are not official NWS warning thresholds.
 const FORECAST_HAZARD_THRESHOLDS = Object.freeze({
@@ -2421,7 +2422,12 @@ class WeatherService {
       if (shortTerm.source === "minutely" && shortTerm.futureHasAmounts) return `${type} is occurring now and continuing.${nearbySupport}`;
       return `${type} is occurring now.${nearbySupport}`;
     }
-    if (currentConditionPrecip) return `${type} now.${nearbySupport}`;
+    if (currentConditionPrecip) {
+      if (shortTerm.source === "minutely" && shortTerm.futureHasAmounts) return `${type} now; forecast to continue.${nearbySupport}`;
+      if (shortTerm.source === "minutely" && shortTerm.futureMeaningful) return `${type} now; more possible within the hour.${nearbySupport}`;
+      if (shortTerm.source === "minutely") return `${type} now; may end soon.${nearbySupport}`;
+      return `${type} now.${nearbySupport}`;
+    }
     if (shortTerm.source === "minutely") {
       if (shortTerm.arrivalMinutes !== null) {
         const arrival = this.precipArrivalLabel(shortTerm.arrivalMinutes);
@@ -2441,7 +2447,12 @@ class WeatherService {
       if (shortTerm.peakChance >= SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD) return `${intensity} now · more possible within the hour`;
       return `${intensity} now`;
     }
-    if (currentConditionPrecip) return `${type} now`;
+    if (currentConditionPrecip) {
+      if (shortTerm.source === "minutely" && shortTerm.futureHasAmounts) return `${type} now · forecast to continue`;
+      if (shortTerm.source === "minutely" && shortTerm.futureMeaningful) return `${type} now · more possible within the hour`;
+      if (shortTerm.source === "minutely") return `${type} now · may end soon`;
+      return `${type} now`;
+    }
     if (shortTerm.source === "minutely" && shortTerm.arrivalMinutes !== null) {
       const arrival = this.precipArrivalLabel(shortTerm.arrivalMinutes);
       return `${type} possible ${arrival}`;
@@ -2934,6 +2945,7 @@ let locationRequestId = 0;
 let lastHourlyHours = [];
 let lastDailyDays = [];
 let activeDashboardData = null;
+let lastDashboardRequestAt = 0;
 let hourlySelectionActive = false;
 let activeHourlyIndex = 0;
 let activeHourlyMetric = "precip";
@@ -4643,6 +4655,7 @@ function animateTemperatureRefresh() {
 }
 
 async function renderDashboard() {
+  lastDashboardRequestAt = Date.now();
   const requestId = ++dashboardRequestId;
   try {
     const location = await locationForDashboard();
@@ -4709,6 +4722,10 @@ async function renderDashboard() {
   }
 }
 
+function refreshDashboardIfStale() {
+  if (!document.hidden && Date.now() - lastDashboardRequestAt >= WEATHER_REFRESH_MAX_AGE_MS) renderDashboard();
+}
+
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" }).catch(() => {});
@@ -4722,6 +4739,12 @@ function startApp() {
   bindInteractions();
   updateClock();
   renderDashboard();
+  document.addEventListener("visibilitychange", refreshDashboardIfStale);
+  window.addEventListener("focus", refreshDashboardIfStale);
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) refreshDashboardIfStale();
+  });
+  window.setInterval(refreshDashboardIfStale, 60 * 1000);
   registerServiceWorker();
   refreshMorningNotificationState();
   window.setInterval(updateClock, 30000);
