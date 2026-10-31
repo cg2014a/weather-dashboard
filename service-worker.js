@@ -15,7 +15,6 @@ const APP_SHELL = [
   "./icons/weather-sunny.svg",
   "./icons/weather-partly.svg",
   "./icons/weather-cloud.svg",
-  "./icons/weather-unknown.svg",
   "./icons/weather-rain.svg",
   "./icons/weather-storm.svg",
   "./icons/wind.svg",

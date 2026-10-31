@@ -48,7 +48,7 @@ const spcOutlookUrl = (layerId, { lat, lon }) => {
   return `https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/FeatureServer/${layerId}/query?${params}`;
 };
 const airQualityUrl = ({ lat, lon }) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi&hourly=us_aqi&timezone=auto&forecast_days=7`;
-const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,weather_code,is_day,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,rain,showers,snowfall,visibility,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&minutely_15=precipitation_probability,precipitation,rain,showers,snowfall&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=168&forecast_minutely_15=60`;
+const openMeteoForecastUrl = ({ lat, lon }) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,rain,showers,snowfall,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,rain,showers,snowfall,visibility,pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&minutely_15=precipitation_probability,precipitation,rain,showers,snowfall&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,uv_index_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7&forecast_hours=168&forecast_minutely_15=60`;
 const epaUvUrl = (location) => location.zip
   ? `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/ZIP/${location.zip}/JSON`
   : `https://data.epa.gov/dmapservice/getEnvirofactsUVDAILY/CITY/${encodeURIComponent(location.city || "")}/STATE/${location.state || ""}/JSON`;
@@ -1014,9 +1014,6 @@ class WeatherService {
       const dailySupplemental = this.dailyValuesFromHourly(hourly);
       return {
         temperature: this.numberOrNull(current.temperature_2m),
-        currentTime: this.openMeteoTimeMs(current.time, data.utc_offset_seconds),
-        weatherCode: this.numberOrNull(current.weather_code),
-        currentIsDay: this.numberOrNull(current.is_day),
         humidity: this.numberOrNull(current.relative_humidity_2m),
         dewPoint: this.numberOrNull(current.dew_point_2m),
         feelsLike: this.numberOrNull(current.apparent_temperature),
@@ -1357,36 +1354,22 @@ class WeatherService {
     const observedWindChill = this.isFreshObservation(observation)
       ? this.readTemperature(observation?.properties?.windChill?.value) : null;
     const feelsLike = observedHeatIndex ?? observedWindChill ?? supplemental?.feelsLike ?? temp;
-    const radar = this.freshIemRadar(supplemental?.iemRadar);
-    const radarSuggestsPrecip = radar && Number.isFinite(radar.dbz) && radar.dbz >= 30;
-    const observedDescription = this.isCurrentPrecipObservationFresh(observation)
-      ? this.visibleObservedConditionText(observation) : "";
-    const stationCondition = /^(?:unknown|not available|n\/?a)$/i.test(observedDescription) ? "" : observedDescription;
-    const nearbyPrecip = this.isNearbyPrecipActivelyOccurring(observation)
-      ? this.precipType(this.observedConditionText(observation)) : "";
-    const modelCondition = this.currentModelCondition(supplemental, radar);
-    const condition = radarSuggestsPrecip
-      ? "Radar suggests precipitation nearby"
-      : stationCondition
-        ? `${stationCondition} reported nearby`
-        : nearbyPrecip
-          ? `${nearbyPrecip} reported nearby`
-          : modelCondition?.condition || "Current conditions unavailable";
-    const icon = radarSuggestsPrecip
-      ? "weather-rain.svg"
-      : stationCondition || nearbyPrecip
-        ? this.iconForObservedCondition(stationCondition || nearbyPrecip, period?.isDaytime)
-        : modelCondition?.icon || "weather-unknown.svg";
+    const condition = this.currentConditionText(period, observation);
 
     return {
       temperature: temp,
-      icon,
+      icon: this.iconForForecast(condition, period?.isDaytime),
       outlookIcon: this.iconForForecast(period?.shortForecast, period?.isDaytime),
       condition,
       feelsLike,
       high: todayHigh,
       low: tonightLow
     };
+  }
+
+  currentConditionText(period, observation) {
+    const observedCondition = this.isFreshObservation(observation) ? this.visibleObservedConditionText(observation) : "";
+    return observedCondition || period?.shortForecast || "Current conditions";
   }
 
   finalizeCurrentWind(period, observation, supplemental) {
@@ -2225,49 +2208,6 @@ class WeatherService {
     if (value.includes("rain") || value.includes("showers") || value.includes("drizzle")) return "weather-rain.svg";
     if (value.includes("cloud") || value.includes("overcast")) return value.includes("partly") ? "weather-partly.svg" : "weather-cloud.svg";
     return isDaytime ? "weather-sunny.svg" : "weather-cloud.svg";
-  }
-
-  iconForObservedCondition(text = "", isDaytime = true) {
-    const value = String(text).toLowerCase();
-    if (/thunder|storm|snow|sleet|ice|rain|showers|drizzle/.test(value)) {
-      return this.iconForForecast(value, isDaytime);
-    }
-    if (/cloud|overcast|fog|haze|mist|smoke/.test(value)) {
-      return /partly|scattered/.test(value) ? "weather-partly.svg" : "weather-cloud.svg";
-    }
-    if (/clear|fair|sunny/.test(value)) return isDaytime ? "weather-sunny.svg" : "weather-cloud.svg";
-    return "weather-unknown.svg";
-  }
-
-  currentModelCondition(supplemental, radar = null) {
-    const validAt = this.numberOrNull(supplemental?.currentTime);
-    const ageMs = Date.now() - validAt;
-    if (validAt === null || ageMs < -20 * 60 * 1000 || ageMs > 45 * 60 * 1000) return null;
-    const code = this.numberOrNull(supplemental?.weatherCode);
-    const descriptions = {
-      0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
-      45: "Fog", 48: "Rime fog", 51: "Light drizzle", 53: "Moderate drizzle",
-      55: "Dense drizzle", 56: "Light freezing drizzle", 57: "Dense freezing drizzle",
-      61: "Light rain", 63: "Moderate rain", 65: "Heavy rain",
-      66: "Light freezing rain", 67: "Heavy freezing rain",
-      71: "Light snow", 73: "Moderate snow", 75: "Heavy snow", 77: "Snow grains",
-      80: "Light rain showers", 81: "Moderate rain showers", 82: "Heavy rain showers",
-      85: "Light snow showers", 86: "Heavy snow showers",
-      95: "Thunderstorm", 96: "Thunderstorm with hail", 97: "Heavy thunderstorm",
-      99: "Heavy thunderstorm with hail"
-    };
-    let description = Object.prototype.hasOwnProperty.call(descriptions, code) ? descriptions[code] : "";
-    if (!description) {
-      const cloudCover = this.numberOrNull(supplemental?.cloudCover);
-      if (cloudCover === null) return null;
-      description = cloudCover >= 85 ? "Overcast" : cloudCover >= 55 ? "Mostly cloudy" : cloudCover >= 25 ? "Partly cloudy" : "Mainly clear";
-    }
-    const isDaytime = supplemental?.currentIsDay !== 0;
-    const radarUnconfirmed = radar && this.isPrecipCondition(description);
-    return {
-      condition: `Model estimate: ${description}${radarUnconfirmed ? " (radar unconfirmed)" : ""}`,
-      icon: this.iconForObservedCondition(description, isDaytime)
-    };
   }
 
   precipType(text = "") {
