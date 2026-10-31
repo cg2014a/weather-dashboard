@@ -1349,42 +1349,40 @@ class WeatherService {
     const temp = this.firstNumber(observedTemp, supplemental?.temperature, period?.temperature);
     const todayHigh = forecastPeriods.find((item) => item.isDaytime)?.temperature ?? supplemental?.high ?? temp;
     const tonightLow = forecastPeriods.find((item) => !item.isDaytime)?.temperature ?? supplemental?.low ?? null;
-    const observedHeatIndex = this.readTemperature(observation?.properties?.heatIndex?.value);
-    const observedWindChill = this.readTemperature(observation?.properties?.windChill?.value);
+    const observedHeatIndex = this.isFreshObservation(observation)
+      ? this.readTemperature(observation?.properties?.heatIndex?.value) : null;
+    const observedWindChill = this.isFreshObservation(observation)
+      ? this.readTemperature(observation?.properties?.windChill?.value) : null;
     const feelsLike = observedHeatIndex ?? observedWindChill ?? supplemental?.feelsLike ?? temp;
-    const reportedCondition = this.currentConditionText(period, observation);
     const radar = this.freshIemRadar(supplemental?.iemRadar);
-    const stationCondition = this.isCurrentPrecipObservationFresh(observation) ? this.visibleObservedConditionText(observation) : "";
-    let condition = reportedCondition;
-    if (radar && Number.isFinite(radar.dbz) && radar.dbz >= 30) {
-      condition = "Radar suggests precipitation nearby";
-    } else if (this.isCurrentPrecipCondition(reportedCondition)) {
-      const chance = this.precipValue(period, supplemental);
-      condition = stationCondition
-        ? `${reportedCondition} reported nearby`
-        : chance > 0 && chance < 50
-          ? `${this.precipType(reportedCondition)} possible (${chance}%)`
-          : `${reportedCondition} forecast`;
-    }
+    const radarSuggestsPrecip = radar && Number.isFinite(radar.dbz) && radar.dbz >= 30;
+    const observedDescription = this.isCurrentPrecipObservationFresh(observation)
+      ? this.visibleObservedConditionText(observation) : "";
+    const stationCondition = /^(?:unknown|not available|n\/?a)$/i.test(observedDescription) ? "" : observedDescription;
+    const nearbyPrecip = this.isNearbyPrecipActivelyOccurring(observation)
+      ? this.precipType(this.observedConditionText(observation)) : "";
+    const condition = radarSuggestsPrecip
+      ? "Radar suggests precipitation nearby"
+      : stationCondition
+        ? `${stationCondition} reported nearby`
+        : nearbyPrecip
+          ? `${nearbyPrecip} reported nearby`
+          : "Current conditions unconfirmed";
+    const icon = radarSuggestsPrecip
+      ? "weather-rain.svg"
+      : stationCondition || nearbyPrecip
+        ? this.iconForObservedCondition(stationCondition || nearbyPrecip, period?.isDaytime)
+        : "weather-unknown.svg";
 
     return {
       temperature: temp,
-      icon: radar && Number.isFinite(radar.dbz) && radar.dbz >= 30
-        ? this.iconForForecast(this.isPrecipCondition(period?.shortForecast) ? period.shortForecast : "rain", period?.isDaytime)
-        : this.iconForForecast(condition, period?.isDaytime),
+      icon,
+      outlookIcon: this.iconForForecast(period?.shortForecast, period?.isDaytime),
       condition,
       feelsLike,
       high: todayHigh,
       low: tonightLow
     };
-  }
-
-  currentConditionText(period, observation) {
-    const observedCondition = this.isFreshObservation(observation) ? this.visibleObservedConditionText(observation) : "";
-    if (this.isPrecipCondition(observedCondition) && !this.isCurrentPrecipObservationFresh(observation)) {
-      return period?.shortForecast || "Current conditions";
-    }
-    return observedCondition || period?.shortForecast || "Current conditions";
   }
 
   finalizeCurrentWind(period, observation, supplemental) {
@@ -1684,7 +1682,7 @@ class WeatherService {
     const shortTerm = this.shortTermPrecipitationSignal(hourlyPeriods, supplemental, currentAmount);
     const localObserved = currentEvidence.source === "iem-n0q" && currentEvidence.observed;
     const modelCurrentPrecip = currentEvidence.source === "open-meteo" && currentEvidence.observed;
-    const forecastCurrent = modelCurrentPrecip || this.isCurrentPrecipCondition(currentPeriod?.shortForecast || "");
+    const forecastCurrent = modelCurrentPrecip || this.isPrecipCondition(currentPeriod?.shortForecast || "");
     const nearbyObserved = this.isNearbyPrecipActivelyOccurring(observation);
     let type = this.shortTermPrecipType(shortTerm, currentPeriod, hourlyPeriods, supplemental);
     if (forecastCurrent && this.isPrecipCondition(currentPeriod?.shortForecast)) type = this.precipType(currentPeriod.shortForecast);
@@ -1692,7 +1690,7 @@ class WeatherService {
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
     const active = localObserved || nearbyObserved || forecastCurrent || shortTerm.meaningful;
     const timeline = shortTerm.timeline;
-    const summary = this.precipitationSummary({ localObserved, nearbyObserved, forecastCurrent, radarAvailable: Boolean(this.freshIemRadar(supplemental?.iemRadar)), currentChance, shortTerm, type });
+    const summary = this.precipitationSummary({ localObserved, nearbyObserved, type });
     const duration = this.precipDurationEstimate(supplemental, localObserved);
     const forecastIntervals = this.precipMinutelyIntervals(supplemental)
       .filter((interval) => Number.isFinite(interval.minutesFromNow) && interval.minutesFromNow > 0 && interval.minutesFromNow <= 60)
@@ -2225,6 +2223,18 @@ class WeatherService {
     return isDaytime ? "weather-sunny.svg" : "weather-cloud.svg";
   }
 
+  iconForObservedCondition(text = "", isDaytime = true) {
+    const value = String(text).toLowerCase();
+    if (/thunder|storm|snow|sleet|ice|rain|showers|drizzle/.test(value)) {
+      return this.iconForForecast(value, isDaytime);
+    }
+    if (/cloud|overcast|fog|haze|mist|smoke/.test(value)) {
+      return /partly|scattered/.test(value) ? "weather-partly.svg" : "weather-cloud.svg";
+    }
+    if (/clear|fair|sunny/.test(value)) return isDaytime ? "weather-sunny.svg" : "weather-cloud.svg";
+    return "weather-unknown.svg";
+  }
+
   precipType(text = "") {
     const value = text.toLowerCase();
     if (value.includes("sleet") || value.includes("ice pellets")) return "Sleet";
@@ -2301,7 +2311,8 @@ class WeatherService {
     if (!timestamp) return false;
     const observedAt = new Date(timestamp).getTime();
     if (!Number.isFinite(observedAt)) return false;
-    return Date.now() - observedAt <= CURRENT_PRECIP_OBSERVATION_FRESHNESS_MINUTES * 60 * 1000;
+    const ageMs = Date.now() - observedAt;
+    return ageMs >= -2 * 60 * 1000 && ageMs <= CURRENT_PRECIP_OBSERVATION_FRESHNESS_MINUTES * 60 * 1000;
   }
 
   localCurrentPrecipType(supplemental, currentPeriod, latestInterval = null) {
@@ -2445,19 +2456,10 @@ class WeatherService {
     return values;
   }
 
-  precipitationSummary({ localObserved, nearbyObserved, forecastCurrent, radarAvailable, currentChance, shortTerm, type }) {
+  precipitationSummary({ localObserved, nearbyObserved, type }) {
     if (localObserved) return `Recent radar suggests precipitation near your selected location.${nearbyObserved ? " A nearby station also reports it." : ""}`;
-    if (nearbyObserved) return `A nearby station recently reported ${type.toLowerCase()}.${radarAvailable ? " Recent radar does not confirm precipitation at your selected location." : " Conditions at your location may differ."}`;
-    if (forecastCurrent) return `${type} is forecast for the current hour${currentChance > 0 ? ` (${currentChance}% chance)` : ""}.${radarAvailable ? " Recent radar does not confirm precipitation at your selected location." : " Current conditions are unconfirmed."}`;
-    if (shortTerm.source === "minutely") {
-      if (shortTerm.arrivalMinutes !== null) {
-        const arrival = this.precipArrivalLabel(shortTerm.arrivalMinutes);
-        return `${type} ${shortTerm.futureHasAmounts ? "forecast" : "possible"} ${arrival}.`;
-      }
-      return `${type} is not expected within the next hour.`;
-    }
-    if (shortTerm.hourlyAmount >= HOURLY_PRECIP_AMOUNT_THRESHOLD_IN) return `Measurable ${type.toLowerCase()} is possible within the hour.`;
-    return `${type} is possible within the hour.`;
+    if (nearbyObserved) return `A nearby station recently reported ${type.toLowerCase()}. Conditions at your location may differ.`;
+    return "Current precipitation at your location is unconfirmed.";
   }
 
   precipitationChartMessage({ localObserved, nearbyObserved, forecastCurrent, shortTerm, type }) {
@@ -3501,7 +3503,7 @@ function updateClock() {
 function renderCurrentWeather(data) {
   setText("currentTemp", formatTemp(data.current.temperature));
   setIcon(elements.currentIcon, data.current.icon, data.current.condition);
-  setIcon(elements.outlookIcon, data.current.icon, "");
+  setIcon(elements.outlookIcon, data.current.outlookIcon || data.current.icon, "");
   setText("condition", data.current.condition);
   setText("feelsLike", formatTemp(data.current.feelsLike));
   setText("currentNarrative", data.narrative);
@@ -3902,10 +3904,6 @@ function renderForecastPrecipBars(precipitation) {
     bars.appendChild(column);
   });
   chart.appendChild(bars);
-  const source = document.createElement("p");
-  source.className = "forecast-precip-note";
-  source.textContent = "Open-Meteo forecast; actual conditions may differ.";
-  chart.appendChild(source);
   return chart;
 }
 
