@@ -141,7 +141,7 @@ h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1
 .precip-amounts { min-width: 0; padding-top: 0; }
 .precip-timeline { display: grid; gap: 3px; min-width: 0; }
 .precip-duration { margin: 0 0 6px !important; font-size: .7rem !important; font-weight: 750; }
-.forecast-precip-chart { min-width: 0; margin-top: 10px; }
+.forecast-precip-chart { min-width: 0; margin-top: 7px; }
 .forecast-precip-heading { margin: 0 0 5px !important; font-size: .7rem !important; font-weight: 800; }
 .forecast-precip-line-chart { display: block; width: 100%; max-width: 520px; height: auto; margin: 0 auto; overflow: visible; }
 .forecast-precip-grid { stroke: rgba(26, 115, 232, .16); stroke-width: 1; stroke-dasharray: 3 4; }
@@ -630,7 +630,7 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .quick-label,
 :root.layout-modern .sun-times span { color: var(--modern-text-dim); }
 :root.layout-modern .sun-times strong { color: var(--modern-text); }
-:root.layout-modern .precip-card { grid-template-columns: 1fr; gap: 0; padding: 15px 16px; }
+:root.layout-modern .precip-card { grid-template-columns: 1fr; gap: 0; padding: 15px 16px 9px; }
 :root.layout-modern .precip-card-main { grid-template-columns: 40px minmax(0, 1fr); gap: 12px; align-items: center; }
 :root.layout-modern .precip-card-main img { width: 40px; height: 40px; }
 :root.layout-modern .precip-card h2 { color: var(--modern-text); }
@@ -638,7 +638,7 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .precip-scale,
 :root.layout-modern .precip-time-labels { color: var(--modern-text-muted); }
 :root.layout-modern .precip-card p { font-size: .85rem; line-height: 1.4; }
-:root.layout-modern .precip-amounts { padding-top: 12px; }
+:root.layout-modern .precip-amounts { padding-top: 9px; }
 :root.layout-modern .modern-precip-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 :root.layout-modern .modern-precip-chip { display: grid; gap: 3px; min-width: 0; padding: 9px 8px; border: 1px solid rgba(219, 236, 248, .22); border-radius: 12px; background: var(--modern-card-strong); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .07); }
 :root.layout-modern .modern-precip-chip span { color: var(--modern-text-dim); font-size: .61rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }

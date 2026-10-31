@@ -1679,10 +1679,10 @@ class WeatherService {
     const active = localObserved || nearbyObserved || forecastCurrent || shortTerm.meaningful;
     const timeline = shortTerm.timeline;
     const summary = this.precipitationSummary({ localObserved, nearbyObserved, type });
-    const duration = this.precipDurationEstimate(supplemental, localObserved);
     const forecastIntervals = this.precipMinutelyIntervals(supplemental)
       .filter((interval) => Number.isFinite(interval.minutesFromNow) && interval.minutesFromNow > 0 && interval.minutesFromNow <= 60)
       .slice(0, 4);
+    const duration = this.precipDurationEstimate(supplemental, localObserved, forecastIntervals);
     const forecastMode = forecastIntervals.some((interval) => interval.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN)
       || !Array.isArray(supplemental?.minutelyPrecipChances) || !supplemental.minutelyPrecipChances.length
       ? "amount" : "chance";
@@ -2462,8 +2462,8 @@ class WeatherService {
     return `in about ${Math.round(minutes / 15) * 15} min`;
   }
 
-  precipDurationEstimate(supplemental, occurringNow) {
-    const intervals = this.precipMinutelyIntervals(supplemental)
+  precipDurationEstimate(supplemental, occurringNow, forecastIntervals = null) {
+    const intervals = (forecastIntervals || this.precipMinutelyIntervals(supplemental))
       .filter((interval) => Number.isFinite(interval.minutesFromNow)
         && interval.minutesFromNow > 0
         && interval.minutesFromNow <= 60)
@@ -2472,9 +2472,20 @@ class WeatherService {
 
     const wet = (interval) => interval.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN;
     const startIndex = occurringNow ? 0 : intervals.findIndex(wet);
-    if (startIndex < 0) return "No estimate";
+    if (startIndex < 0 || (occurringNow && !wet(intervals[0]) && intervals[0].chance >= SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD)) {
+      const firstChance = intervals.findIndex((interval) => interval.chance >= SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD);
+      if (firstChance < 0) return "No estimate";
+      let lastChance = intervals[firstChance];
+      for (let index = firstChance + 1; index < intervals.length; index += 1) {
+        if (intervals[index].minutesFromNow - lastChance.minutesFromNow > 20
+          || intervals[index].chance < SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD) break;
+        lastChance = intervals[index];
+      }
+      const minutes = Math.max(15, Math.round((lastChance.minutesFromNow - intervals[firstChance].minutesFromNow + 15) / 15) * 15);
+      return `${minutes} min (chance)`;
+    }
     if (occurringNow && !wet(intervals[0])) {
-      return intervals[0].chance >= SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD ? "No estimate" : "Under 15 min";
+      return "Under 15 min";
     }
 
     let lastWet = null;
@@ -3884,7 +3895,7 @@ function renderForecastPrecipLine(precipitation) {
     || Math.ceil(maxAmount);
   const scale = isAmount ? amountScale : 100;
   const xAt = (index) => 34 + (252 * index) / Math.max(1, intervals.length - 1);
-  const yAt = (value) => 82 - (Math.min(scale, value) / scale) * 50;
+  const yAt = (value) => 55 - (Math.min(scale, value) / scale) * 32;
   const points = intervals.map((interval, index) => ({
     x: xAt(index),
     y: yAt(isAmount ? amounts[index] : chances[index]),
@@ -3896,16 +3907,16 @@ function renderForecastPrecipLine(precipitation) {
     })
   }));
   svg.classList.add("forecast-precip-line-chart");
-  svg.setAttribute("viewBox", "0 0 320 108");
+  svg.setAttribute("viewBox", "0 0 320 76");
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", `${heading.textContent}. ${points.map((point) => `${point.time}: ${point.value}`).join("; ")}.`);
-  [32, 57, 82].forEach((y) => addSvg("line", { x1: 18, y1: y, x2: 302, y2: y }, "forecast-precip-grid"));
+  [23, 39, 55].forEach((y) => addSvg("line", { x1: 18, y1: y, x2: 302, y2: y }, "forecast-precip-grid"));
   addSvg("polyline", { points: points.map((point) => `${point.x},${point.y}`).join(" ") }, "forecast-precip-line");
   points.forEach((point) => {
     addSvg("circle", { cx: point.x, cy: point.y, r: 4 }, "forecast-precip-point");
     const value = addSvg("text", { x: point.x, y: point.y - 10, "text-anchor": "middle" }, "forecast-precip-value");
     value.textContent = point.value;
-    const time = addSvg("text", { x: point.x, y: 103, "text-anchor": "middle" }, "forecast-precip-time");
+    const time = addSvg("text", { x: point.x, y: 71, "text-anchor": "middle" }, "forecast-precip-time");
     time.textContent = point.time;
   });
   chart.appendChild(svg);
