@@ -1674,6 +1674,7 @@ class WeatherService {
     const active = localObserved || currentConditionPrecip || shortTerm.meaningful;
     const timeline = shortTerm.timeline;
     const summary = this.precipitationSummary({ localObserved, currentConditionPrecip, nearbyObserved, shortTerm, type });
+    const duration = this.precipDurationEstimate(supplemental, localObserved || currentConditionPrecip);
 
     return {
       active,
@@ -1690,13 +1691,13 @@ class WeatherService {
       currentSource: currentEvidence.source,
       currentObserved: localObserved,
       currentConditionPrecip,
-      duration: this.precipDurationEstimate(supplemental, localObserved || currentConditionPrecip),
+      duration,
       arrivalMinutes: shortTerm.arrivalMinutes,
       futureMeaningful: shortTerm.futureMeaningful,
       futureHasAmounts: shortTerm.futureHasAmounts,
       currentAmount,
       currentRadarDbz: currentEvidence.source === "iem-n0q" && localObserved ? currentEvidence.radar?.dbz ?? null : null,
-      chartMessage: this.precipitationChartMessage({ localObserved, currentConditionPrecip, shortTerm, type, currentAmount })
+      chartMessage: this.precipitationChartMessage({ localObserved, currentConditionPrecip, shortTerm, type, currentAmount, duration })
     };
   }
 
@@ -2440,19 +2441,16 @@ class WeatherService {
     return `${type} likely within the hour.${nearbySupport}`;
   }
 
-  precipitationChartMessage({ localObserved, currentConditionPrecip, shortTerm, type, currentAmount }) {
+  precipitationChartMessage({ localObserved, currentConditionPrecip, shortTerm, type, currentAmount, duration }) {
+    const timeRemaining = duration && duration !== "No estimate" ? ` · ${duration}` : "";
     if (localObserved) {
       const intensity = this.precipitationIntensityLabel(currentAmount, type);
-      if (shortTerm.source === "minutely" && !shortTerm.futureMeaningful) return `${intensity} now · may end within 15 minutes`;
-      if (shortTerm.source === "minutely" && shortTerm.futureHasAmounts) return `${intensity} now · continuing`;
+      if (timeRemaining) return `${intensity} now${timeRemaining}`;
       if (shortTerm.peakChance >= SHORT_INTERVAL_PRECIP_CHANCE_THRESHOLD) return `${intensity} now · more possible within the hour`;
       return `${intensity} now`;
     }
     if (currentConditionPrecip) {
-      if (shortTerm.source === "minutely" && shortTerm.futureHasAmounts) return `${type} now · expected to continue`;
-      if (shortTerm.source === "minutely" && shortTerm.futureMeaningful) return `${type} now · may continue over the next hour`;
-      if (shortTerm.source === "minutely") return `${type} now · may end soon`;
-      return `${type} now`;
+      return `${type} now${timeRemaining}`;
     }
     if (shortTerm.source === "minutely" && shortTerm.arrivalMinutes !== null) {
       const arrival = this.precipArrivalLabel(shortTerm.arrivalMinutes);
@@ -2983,6 +2981,8 @@ let lastHourlyHours = [];
 let lastDailyDays = [];
 let activeDashboardData = null;
 let lastDashboardRequestAt = 0;
+let lastAppUpdateCheckAt = 0;
+let appUpdateCheckPromise = null;
 let hourlySelectionActive = false;
 let activeHourlyIndex = 0;
 let activeHourlyMetric = "precip";
@@ -3883,6 +3883,10 @@ function renderPrecipTimeline(precipitation) {
 
   plot.append(scale, bars, labels);
   chart.append(title, plot);
+  const duration = document.createElement("p");
+  duration.className = "precip-duration";
+  duration.textContent = `Duration: ${modernPrecipitationDuration(precipitation)}`;
+  chart.appendChild(duration);
   return chart;
 }
 
@@ -4670,6 +4674,7 @@ function bindPullToRefresh() {
     }
     elements.pullRefresh.classList.add("is-refreshing");
     elements.pullRefresh.textContent = "Refreshing...";
+    if (await checkForAppUpdate(true)) return;
     await renderDashboard();
     elements.pullRefresh.textContent = "Updated";
     window.setTimeout(() => {
@@ -4752,7 +4757,36 @@ async function renderDashboard() {
 }
 
 function refreshDashboardIfStale() {
-  if (!document.hidden && Date.now() - lastDashboardRequestAt >= WEATHER_REFRESH_MAX_AGE_MS) renderDashboard();
+  if (document.hidden) return;
+  checkForAppUpdate();
+  if (Date.now() - lastDashboardRequestAt >= WEATHER_REFRESH_MAX_AGE_MS) renderDashboard();
+}
+
+function checkForAppUpdate(force = false) {
+  if (document.hidden || !/^https?:$/.test(window.location.protocol)) return Promise.resolve(false);
+  if (appUpdateCheckPromise) return appUpdateCheckPromise;
+  if (!force && Date.now() - lastAppUpdateCheckAt < 60 * 1000) return Promise.resolve(false);
+  lastAppUpdateCheckAt = Date.now();
+  appUpdateCheckPromise = fetch(new URL("version.js", document.baseURI), { cache: "no-store" })
+    .then((response) => response.ok ? response.text() : "")
+    .then((source) => {
+      const latestVersion = source.match(/SKYSTATION_VERSION\s*=\s*["']([^"']+)["']/)?.[1];
+      if (!latestVersion || latestVersion === self.SKYSTATION_VERSION) return false;
+      const reloadKey = "skystation-app-update-attempt";
+      try {
+        if (sessionStorage.getItem(reloadKey) === latestVersion) return false;
+        sessionStorage.setItem(reloadKey, latestVersion);
+      } catch {
+        // Updating still works when session storage is unavailable.
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.set("appVersion", latestVersion);
+      window.location.replace(url.href);
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => { appUpdateCheckPromise = null; });
+  return appUpdateCheckPromise;
 }
 
 function registerServiceWorker() {
@@ -4775,6 +4809,7 @@ function startApp() {
   });
   window.setInterval(refreshDashboardIfStale, 60 * 1000);
   registerServiceWorker();
+  checkForAppUpdate();
   refreshMorningNotificationState();
   window.setInterval(updateClock, 30000);
 }
