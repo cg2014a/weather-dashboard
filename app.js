@@ -1370,6 +1370,9 @@ class WeatherService {
 
   currentConditionText(period, observation) {
     const observedCondition = this.isFreshObservation(observation) ? this.visibleObservedConditionText(observation) : "";
+    if (this.isPrecipCondition(observedCondition) && !this.isCurrentPrecipObservationFresh(observation)) {
+      return period?.shortForecast || "Current conditions";
+    }
     return observedCondition || period?.shortForecast || "Current conditions";
   }
 
@@ -1673,23 +1676,76 @@ class WeatherService {
     const forecastCurrent = modelCurrentPrecip || this.isPrecipCondition(currentPeriod?.shortForecast || "");
     const nearbyObserved = this.isNearbyPrecipActivelyOccurring(observation);
     const currentCondition = this.currentConditionText(currentPeriod, observation);
-    const currentConditionPrecip = this.isCurrentPrecipCondition(currentCondition);
+    const observedCondition = this.visibleObservedConditionText(observation);
+    const stationObserved = this.isCurrentPrecipObservationFresh(observation)
+      && this.isCurrentPrecipCondition(observedCondition);
+    const currentConditionPrecip = stationObserved || localObserved;
     let type = this.shortTermPrecipType(shortTerm, currentPeriod, hourlyPeriods, supplemental);
-    if (currentConditionPrecip) type = this.precipType(currentCondition);
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
-    const active = currentConditionPrecip;
     const timeline = shortTerm.timeline;
-    const summary = currentConditionPrecip ? `Now: ${currentCondition}` : "";
     const forecastIntervals = this.precipMinutelyIntervals(supplemental, 9)
       .filter((interval) => Number.isFinite(interval.minutesFromNow) && interval.minutesFromNow > 0 && interval.minutesFromNow <= 60)
       .slice(0, 4);
-    const duration = currentConditionPrecip
-      ? this.precipDurationEstimate(supplemental, true, forecastIntervals) || this.hourlyPrecipDurationEstimate(hourlyPeriods)
+    const forecastWet = (interval) => interval.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN
+      && ((interval.chanceAvailable && interval.chance >= 50)
+        || (interval.amount >= 0.05 && interval.chanceAvailable && interval.chance >= 30));
+    const minuteSignal = forecastIntervals.find(forecastWet) || null;
+    const nwsSignal = (hourlyPeriods || []).slice(0, 2).find((period) => {
+      if (!period?.endTime || !this.isPrecipCondition(period.shortForecast)) return false;
+      const chance = this.numberOrNull(period.probabilityOfPrecipitation?.value);
+      return this.isCurrentPrecipCondition(period.shortForecast) || (chance !== null && chance >= 60);
+    }) || null;
+    const modelCurrentAmount = this.currentLocalPrecipAmount(supplemental);
+    const modelCurrentSignal = !stationObserved && !localObserved
+      && ((modelCurrentAmount >= 0.01 && currentChance >= 50)
+        || (modelCurrentAmount >= 0.05 && currentChance >= 30));
+    const active = currentConditionPrecip || nearbyObserved || modelCurrentSignal || Boolean(minuteSignal || nwsSignal);
+    const signal = localObserved ? "radar" : stationObserved ? "station" : nearbyObserved ? "nearby-station" : modelCurrentSignal ? "model-current"
+      : minuteSignal ? "minute-forecast" : "nws-forecast";
+    if (localObserved && !stationObserved) type = "Precipitation";
+    else if (stationObserved) type = this.precipType(observedCondition);
+    else if (nearbyObserved) type = this.precipType(observation?.properties?.nearbyPrecipitationText
+      || observation?.properties?.localPrecipitationText || "");
+    else if (nwsSignal) type = this.precipType(nwsSignal.shortForecast);
+    else if (minuteSignal?.type) type = minuteSignal.type;
+    const forecastDuration = minuteSignal
+      ? this.forecastPrecipDurationEstimate(forecastIntervals, minuteSignal)
       : null;
-    const forecastMode = forecastIntervals.some((interval) => interval.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN)
-      || !Array.isArray(supplemental?.minutelyPrecipChances) || !supplemental.minutelyPrecipChances.length
-      ? "amount" : "chance";
+    const duration = currentConditionPrecip || nearbyObserved || modelCurrentSignal
+      ? this.precipDurationEstimate(supplemental, true, forecastIntervals) || this.hourlyPrecipDurationEstimate(hourlyPeriods)
+      : forecastDuration || (nwsSignal === hourlyPeriods?.[0] ? this.hourlyPrecipDurationEstimate(hourlyPeriods) : null);
+    let timing = "Next hour";
+    if (localObserved || stationObserved) timing = "Now";
+    else if (nearbyObserved) timing = "Nearby now";
+    else if (modelCurrentSignal) timing = "Around now";
+    else if (minuteSignal) timing = minuteSignal.minutesFromNow <= 15
+      ? "Within 15 min" : `About ${Math.ceil(minuteSignal.minutesFromNow / 15) * 15} min`;
+    else if (nwsSignal === hourlyPeriods?.[0]) timing = "This hour";
+    const forecastAmount = minuteSignal?.amount ?? (modelCurrentSignal ? modelCurrentAmount : null);
+    const intensityText = stationObserved ? observedCondition
+      : nearbyObserved ? observation?.properties?.nearbyPrecipitationText || observation?.properties?.localPrecipitationText || ""
+      : nwsSignal ? nwsSignal.shortForecast : currentCondition;
+    const intensityMatch = intensityText.match(/\b(light|moderate|heavy)\b/i)?.[0];
+    let intensity = null;
+    if (localObserved) {
+      intensity = currentEvidence.radar?.dbz >= 44 ? "Strong radar"
+        : currentEvidence.radar?.dbz >= 38 ? "Moderate radar" : "Light radar";
+    } else if (stationObserved || nearbyObserved) {
+      if (intensityMatch) intensity = intensityMatch[0].toUpperCase() + intensityMatch.slice(1).toLowerCase();
+    } else if (forecastAmount >= 0.075) intensity = "Heavy forecast";
+    else if (forecastAmount >= 0.025) intensity = "Moderate forecast";
+    else if (intensityMatch) intensity = `${intensityMatch[0].toUpperCase() + intensityMatch.slice(1).toLowerCase()} forecast`;
+    else if (forecastAmount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN) intensity = "Light forecast";
 
+    let summary = "";
+    if (signal === "radar") summary = "Radar detects precipitation over your area.";
+    else if (signal === "station") summary = `Nearby station reports ${observedCondition.toLowerCase()} now.`;
+    else if (signal === "nearby-station") summary = `${type} reported by a nearby station.`;
+    else if (signal === "model-current") summary = `${type} forecast around now at your location.`;
+    else if (signal === "minute-forecast") summary = `${type} possible ${this.precipArrivalLabel(minuteSignal.minutesFromNow)} (15-minute forecast).`;
+    else if (this.isCurrentPrecipCondition(nwsSignal?.shortForecast)) {
+      summary = `NWS forecasts ${nwsSignal.shortForecast.toLowerCase()} ${nwsSignal === hourlyPeriods?.[0] ? "this hour" : "next hour"}.`;
+    } else summary = `${type} possible ${nwsSignal === hourlyPeriods?.[0] ? "this hour" : "next hour"} (NWS forecast).`;
     return {
       active,
       type,
@@ -1708,10 +1764,10 @@ class WeatherService {
       forecastCurrent,
       currentCondition,
       currentConditionShowsPrecip: currentConditionPrecip,
+      signal,
+      timing,
+      intensity,
       duration,
-      forecastIntervals,
-      forecastMode,
-      forecastTimezone: supplemental?.weatherTimezone || null,
       arrivalMinutes: shortTerm.arrivalMinutes,
       futureMeaningful: shortTerm.futureMeaningful,
       futureHasAmounts: shortTerm.futureHasAmounts,
@@ -2388,7 +2444,7 @@ class WeatherService {
     return Array.from({ length: count }, (_, index) => {
       const chance = this.numberOrNull(chances[index]);
       const snowAmount = this.numberOrNull(snowfall[index]) ?? 0;
-      const rainAmount = this.firstNumber(rain[index], showers[index]) ?? 0;
+      const rainAmount = Math.max(this.numberOrNull(rain[index]) ?? 0, this.numberOrNull(showers[index]) ?? 0);
       const amount = Math.max(this.numberOrNull(amounts[index]) ?? 0, rainAmount, snowAmount);
       return {
         timestamp: this.numberOrNull(times[index]),
@@ -2460,7 +2516,7 @@ class WeatherService {
 
   precipArrivalLabel(minutes) {
     if (!Number.isFinite(minutes) || minutes <= 15) return "within 15 min";
-    return `in about ${Math.round(minutes / 15) * 15} min`;
+    return `in about ${Math.ceil(minutes / 15) * 15} min`;
   }
 
   precipDurationEstimate(supplemental, occurringNow, forecastIntervals = null) {
@@ -2482,9 +2538,33 @@ class WeatherService {
       }
       lastWet = intervals[index];
     }
-    const minutes = endingMinutes ?? lastWet.minutesFromNow;
+    // Each Open-Meteo timestamp closes the preceding 15-minute precipitation window.
+    const minutes = endingMinutes === null ? lastWet.minutesFromNow : endingMinutes - 15;
     const rounded = Math.max(15, (endingMinutes === null ? Math.floor(minutes / 15) : Math.round(minutes / 15)) * 15);
     return `${endingMinutes === null ? "" : "~"}${rounded}${endingMinutes === null ? "+" : ""} min left`;
+  }
+
+  forecastPrecipDurationEstimate(intervals = [], firstWet) {
+    const startIndex = intervals.indexOf(firstWet);
+    if (startIndex < 0) return null;
+    let lastWet = firstWet;
+    let endingMinutes = null;
+    for (let index = startIndex + 1; index < intervals.length; index += 1) {
+      const interval = intervals[index];
+      if (interval.minutesFromNow - lastWet.minutesFromNow > 20) break;
+      const likelyWet = interval.amount >= CURRENT_PRECIP_AMOUNT_THRESHOLD_IN
+        && interval.chanceAvailable && interval.chance >= 40;
+      if (!likelyWet) {
+        endingMinutes = interval.minutesFromNow;
+        break;
+      }
+      lastWet = interval;
+    }
+    const startMinutes = Math.max(0, firstWet.minutesFromNow - 15);
+    const endMinutes = endingMinutes === null ? lastWet.minutesFromNow : endingMinutes - 15;
+    const span = endMinutes - startMinutes;
+    const minutes = Math.max(15, Math.round(span / 15) * 15);
+    return `${endingMinutes === null ? "" : "~"}${minutes}${endingMinutes === null ? "+" : ""} min`;
   }
 
   hourlyPrecipDurationEstimate(hourlyPeriods = []) {
@@ -3792,23 +3872,11 @@ function renderPrecipitation(precipitation) {
   }
 
   elements.precipCard.hidden = false;
-  elements.precipCard.classList.remove("has-forecast-line");
-  elements.precipCard.classList.add("has-forecast-bars");
   setIcon(elements.precipIcon, precipitation.icon, "");
   setText("precipSummary", precipitation.summary);
   elements.precipSummary.hidden = !precipitation.summary;
   elements.precipAmounts.replaceChildren();
-  if (selectedLayout !== "classic") {
-    elements.precipAmounts.appendChild(renderModernPrecipitationChips(precipitation));
-  } else {
-    if (precipitation.duration) {
-      const duration = document.createElement("p");
-      duration.className = "precip-duration";
-      duration.textContent = `Duration: ${precipitation.duration}`;
-      elements.precipAmounts.appendChild(duration);
-    }
-  }
-  elements.precipAmounts.appendChild(renderForecastPrecipBars(precipitation));
+  elements.precipAmounts.appendChild(renderModernPrecipitationChips(precipitation));
 }
 
 function renderModernPrecipitationChips(precipitation) {
@@ -3829,12 +3897,12 @@ function renderModernPrecipitationChips(precipitation) {
   const precipitationDescriptor = modernPrecipitationDescriptor(precipitation);
   addChip("Timing", modernPrecipitationTiming(precipitation));
   addChip(precipitationDescriptor.label, precipitationDescriptor.value);
-  if (precipitation.duration) addChip("Duration", precipitation.duration);
-  else chips.classList.add("without-duration");
+  addChip("Duration", precipitation.duration || "Uncertain");
   return chips;
 }
 
 function modernPrecipitationTiming(precipitation) {
+  if (precipitation.timing) return precipitation.timing;
   if (precipitation.currentConditionShowsPrecip) return "Now";
   if (precipitation.currentObserved) return "Recent radar";
   if (precipitation.nearbyObserved) return "Recent report";
@@ -3847,59 +3915,12 @@ function modernPrecipitationTiming(precipitation) {
 
 function modernPrecipitationDescriptor(precipitation) {
   const type = precipitation.type || "Precipitation";
-  const intensity = precipitation.currentCondition?.match(/\b(light|moderate|heavy)\b/i)?.[0];
-  if (intensity) return { label: "Intensity", value: intensity[0].toUpperCase() + intensity.slice(1).toLowerCase() };
+  if (precipitation.intensity) return { label: "Intensity", value: precipitation.intensity };
   return { label: "Type", value: type === "Sleet" ? "Mixed" : type };
 }
 
 function modernPrecipitationDuration(precipitation) {
   return precipitation.duration || "";
-}
-
-function renderForecastPrecipBars(precipitation) {
-  const chart = document.createElement("div");
-  const heading = document.createElement("p");
-  chart.className = "forecast-precip-chart";
-  heading.className = "forecast-precip-heading";
-  const intervals = precipitation.forecastIntervals || [];
-  const isAmount = precipitation.forecastMode === "amount";
-  heading.textContent = isAmount
-    ? "Forecast amount · each bar is 15 min"
-    : "Forecast chance · each bar is 15 min";
-  chart.appendChild(heading);
-  if (!intervals.length) {
-    const unavailable = document.createElement("p");
-    unavailable.className = "forecast-precip-note";
-    unavailable.textContent = "15-minute forecast unavailable.";
-    chart.appendChild(unavailable);
-    return chart;
-  }
-
-  const bars = document.createElement("div");
-  bars.className = "forecast-precip-bars";
-  intervals.forEach((interval) => {
-    const column = document.createElement("div");
-    const value = document.createElement("strong");
-    const track = document.createElement("div");
-    const fill = document.createElement("span");
-    const time = document.createElement("span");
-    const amount = Number(interval.amount) || 0;
-    const chance = Math.max(0, Math.min(100, Number(interval.chance) || 0));
-    column.className = "forecast-precip-column";
-    value.textContent = isAmount ? (amount < CURRENT_PRECIP_AMOUNT_THRESHOLD_IN ? "0 in" : amount < 0.01 ? "<0.01 in" : `${amount.toFixed(2)} in`) : `${Math.round(chance)}%`;
-    track.className = "forecast-precip-track";
-    fill.className = "forecast-precip-fill";
-    fill.style.height = `${isAmount ? precipAmountBarHeight(amount) : chance}%`;
-    time.className = "forecast-precip-time";
-    time.textContent = new Date(interval.timestamp).toLocaleTimeString([], {
-      hour: "numeric", minute: "2-digit", timeZone: precipitation.forecastTimezone || undefined
-    });
-    track.appendChild(fill);
-    column.append(value, track, time);
-    bars.appendChild(column);
-  });
-  chart.appendChild(bars);
-  return chart;
 }
 
 function renderPrecipTimeline(precipitation) {
