@@ -718,8 +718,8 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .radar-preview-heading > div { min-width: 0; }
 :root.layout-modern .radar-preview-heading button,
 :root.layout-modern .radar-heading button { flex: 0 0 auto; max-width: 100%; border: 1px solid rgba(247, 250, 252, .2); background: rgba(247, 250, 252, .14); color: var(--modern-text); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .12); white-space: nowrap; }
-:root.layout-modern .alert-card { border-color: rgba(143, 211, 242, .55); background: var(--modern-card-strong); color: var(--modern-text); }
-:root.layout-modern .alert-card p { color: var(--modern-text-muted); }
+:root.layout-modern .alert-card { border-color: #e9a7b1; background: #ffe5e8; color: #5c1f2b; }
+:root.layout-modern .alert-card p { color: #71333e; }
 :root.layout-modern .settings-panel { background: rgba(4, 24, 43, .58); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 :root.layout-modern .settings-card { border-color: var(--modern-border); border-radius: 28px 28px 0 0; background: var(--modern-card-strong); color: var(--modern-text); }
 :root.layout-modern .theme-setting,
