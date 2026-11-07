@@ -83,7 +83,6 @@ const emptyWeather = {
   },
   summaryStats: [],
   narrative: "Weather data is loading.",
-  outlookSummary: "Weather data is loading.",
   precipitation: { active: false, type: "Rain", icon: "weather-rain.svg", summary: "No significant precipitation expected.", current: "0% now", nextHour: "0% next hour", amount: "0 in", today: "", timeline: [], note: "No precipitation expected soon." },
   details: [],
   alert: null,
@@ -176,7 +175,6 @@ class WeatherService {
       current,
       summaryStats: this.mapSummaryStats(current, currentPeriod, observation, precipitation, null, enrichedSupplemental, currentWind),
       narrative: this.mapNarrative(currentPeriod, dailyPeriods),
-      outlookSummary: this.mapOutlookSummary(currentPeriod, dailyPeriods),
       precipitation,
       details: this.mapDetails(currentPeriod, observation, precipitation, enrichedSupplemental, currentWind),
       alert: this.mapAlert(alerts || { features: [] }),
@@ -227,7 +225,6 @@ class WeatherService {
       current,
       summaryStats: this.mapSummaryStats(current, currentPeriod, null, precipitation, null, enrichedSupplemental, currentWind),
       narrative: "Weather conditions are shown from the backup forecast source.",
-      outlookSummary: this.mapOutlookSummary(currentPeriod, forecastPeriods),
       precipitation,
       details: this.mapDetails(currentPeriod, null, precipitation, enrichedSupplemental, currentWind),
       alert: null,
@@ -1666,22 +1663,6 @@ class WeatherService {
   mapNarrative(period, forecastPeriods) {
     const matchingPeriod = forecastPeriods.find((item) => item.isDaytime === period?.isDaytime) || forecastPeriods[0];
     return matchingPeriod?.detailedForecast || period?.detailedForecast || period?.shortForecast || "Current conditions are updating.";
-  }
-
-  mapOutlookSummary(period, forecastPeriods) {
-    const matchingPeriod = forecastPeriods.find((item) => item.isDaytime === period?.isDaytime) || forecastPeriods[0];
-    const outlook = matchingPeriod?.shortForecast || period?.shortForecast;
-    if (outlook && !["Forecast", "Current conditions"].includes(outlook)) {
-      const isDaytime = matchingPeriod?.isDaytime ?? period?.isDaytime;
-      const label = matchingPeriod?.name || (isDaytime ? "Today" : "Tonight");
-      const temperature = matchingPeriod?.temperature;
-      const temperatureSummary = Number.isFinite(temperature)
-        ? ` ${isDaytime ? "High" : "Low"} near ${Math.round(temperature)}°.`
-        : "";
-      return `${label}: ${outlook.replace(/[.!?]+$/, "")}.${temperatureSummary}`;
-    }
-    const detailed = matchingPeriod?.detailedForecast || period?.detailedForecast;
-    return detailed?.split(/(?<=[.!?])\s+/)[0] || "Current conditions are updating.";
   }
 
   mapPrecipitation(currentPeriod, hourlyPeriods, supplemental, observation = null) {
@@ -3191,7 +3172,6 @@ function applyLayout(layout) {
   document.documentElement.classList.toggle("theme-dark", selectedTheme === "dark");
   const outlookTitle = elements.currentOutlook?.querySelector("h2");
   if (outlookTitle) outlookTitle.textContent = "Weather Ahead";
-  if (activeDashboardData) setText("currentNarrative", isModern ? activeDashboardData.outlookSummary : activeDashboardData.narrative);
   const dailyTitle = document.getElementById("daily-title");
   if (dailyTitle) dailyTitle.textContent = "7-Day Forecast";
   if (elements.currentOutlook) {
@@ -3597,7 +3577,7 @@ function renderCurrentWeather(data) {
   setIcon(elements.outlookIcon, data.current.outlookIcon || data.current.icon, "");
   setText("condition", data.current.condition);
   setText("feelsLike", formatTemp(data.current.feelsLike));
-  setText("currentNarrative", selectedLayout === "modern" ? data.outlookSummary : data.narrative);
+  setText("currentNarrative", data.narrative);
 }
 
 function renderModernSummaryStats(stats) {

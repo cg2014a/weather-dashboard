@@ -617,7 +617,7 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .allergen-badge,
 :root.layout-modern .day-allergen-pills .allergen-badge { min-height: 24px; padding: 4px 8px; border: 1px solid rgba(219, 236, 248, .15); border-radius: 999px; background: rgba(7, 29, 49, .4); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .08); }
 :root.layout-modern .day-metric-value .dew-status { min-height: 24px; padding: 4px 8px; border: 1px solid rgba(219, 236, 248, .15); border-radius: 999px; background: rgba(7, 29, 49, .4); color: var(--modern-text); box-shadow: inset 0 1px 0 rgba(247, 250, 252, .08); font-size: .7rem; font-weight: 800; }
-:root.layout-modern .current-outlook { border-color: var(--modern-border); background: var(--modern-card-strong); }
+:root.layout-modern .current-outlook { border-color: var(--modern-border); background: var(--modern-card); }
 :root.layout-modern .current-outlook h2 { color: var(--modern-text); }
 :root.layout-modern .current-outlook p { color: var(--modern-text-muted); }
 :root.layout-modern .current-card .forecast-card { border-color: var(--modern-border); border-radius: 18px; background: var(--modern-card-strong); }
@@ -662,7 +662,7 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .section-heading h2,
 :root.layout-modern .radar-preview-heading h2 { letter-spacing: -.02em; }
 :root.layout-modern .seven-day .daily-heading { display: flex; margin-bottom: 14px; }
-:root.layout-modern .current-card > .current-outlook { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; margin: 0; padding: 12px 24px 16px; border: 0; border-top: 1px solid var(--modern-border); border-radius: 0 0 21px 21px; background: var(--modern-card-strong); box-shadow: none; }
+:root.layout-modern .current-card > .current-outlook { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; margin: 0; padding: 12px 24px 16px; border: 0; border-top: 1px solid rgba(255, 255, 255, .14); border-radius: 0 0 21px 21px; background: var(--modern-card); box-shadow: none; }
 :root.layout-modern .current-card > .current-outlook img { width: 22px; height: 22px; }
 :root.layout-modern .current-card > .current-outlook h2 { margin-bottom: 3px; font-size: .82rem; }
 :root.layout-modern .current-card > .current-outlook p { font-size: .8rem; line-height: 1.35; }
