@@ -12,8 +12,8 @@
     <link rel="manifest" href="manifest.json" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.svg" />
     <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="style.css?v2-61" />
-    <script src="version.js?v2-61"></script>
+    <link rel="stylesheet" href="style.css?v2-62" />
+    <script src="version.js?v2-62"></script>
   </head>
   <body>
     <div class="pull-refresh" id="pullRefresh" aria-hidden="true">Release to refresh</div>
@@ -22,7 +22,7 @@
         <p class="app-kicker">
           <span class="kicker-copy">SkyStation Weather <span>- <span id="locationLabel">Olathe, KS</span></span> <time id="appClock">--:--</time></span>
           <span class="header-actions">
-            <button class="settings-button notification-button" id="notificationsToggle" type="button" aria-label="Notification settings" aria-controls="settingsPanel" aria-expanded="false">
+            <button class="settings-button notification-button" id="notificationsToggle" type="button" aria-label="Notifications" aria-controls="notificationsPanel" aria-expanded="false">
               <img src="icons/nav-notifications.svg" alt="" />
             </button>
             <button class="settings-button" id="settingsToggle" type="button" aria-label="Settings" aria-controls="settingsPanel" aria-expanded="false">
@@ -191,8 +191,19 @@
             <span class="toggle-track" aria-hidden="true"></span>
           </label>
         </section>
-        <section class="settings-group" aria-labelledby="notificationSettingsHeading">
-          <h3 id="notificationSettingsHeading" tabindex="-1">Notifications</h3>
+        <section class="settings-group settings-sources" aria-labelledby="dataSourcesHeading">
+          <h3 id="dataSourcesHeading">Data Sources</h3>
+          <p>Weather: NWS · Fallbacks: EPA/AirNow/Open-Meteo · Allergy: Atmospore / SkyStation · Radar: Windy</p>
+        </section>
+      </form>
+    </section>
+    <section class="settings-panel notifications-panel" id="notificationsPanel" role="dialog" aria-modal="true" aria-labelledby="notificationSettingsHeading" hidden>
+      <div class="settings-card notifications-card">
+        <div class="settings-heading">
+          <h2 id="notificationSettingsHeading" tabindex="-1">Notifications</h2>
+          <button id="notificationsClose" type="button" aria-label="Close notifications">Close</button>
+        </div>
+        <section class="settings-group" aria-label="Notification preferences">
           <label class="location-toggle">
             <span>
               <strong>Morning Forecast</strong>
@@ -220,14 +231,10 @@
           </details>
           <p id="morningNotificationStatus" class="notification-status" role="status"></p>
         </section>
-        <section class="settings-group settings-sources" aria-labelledby="dataSourcesHeading">
-          <h3 id="dataSourcesHeading">Data Sources</h3>
-          <p>Weather: NWS · Fallbacks: EPA/AirNow/Open-Meteo · Allergy: Atmospore / SkyStation · Radar: Windy</p>
-        </section>
-      </form>
+      </div>
     </section>
-    <script src="atmospore-client.js?v2-61"></script>
-    <script src="app.js?v2-61"></script>
+    <script src="atmospore-client.js?v2-62"></script>
+    <script src="app.js?v2-62"></script>
   </body>
 </html>
 

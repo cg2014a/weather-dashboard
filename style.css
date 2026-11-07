@@ -61,7 +61,7 @@ img { display: block; max-width: 100%; }
 .settings-button { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-left: 1px; padding: 0; border: 0; border-radius: 999px; background: transparent; cursor: pointer; }
 .settings-button img { width: 15px; height: 15px; opacity: .7; }
 .settings-button:focus-visible { outline: 2px solid rgba(26, 115, 232, .35); outline-offset: 2px; }
-.notification-button { display: none; }
+.notification-button { display: inline-grid; }
 
 h1, h2, p { margin-top: 0; }
 h1 { margin-bottom: 0; font-size: clamp(1.18rem, 4.5vw, 1.55rem); line-height: 1; font-weight: 760; }
@@ -781,6 +781,7 @@ body.pollen-open { overflow: hidden; }
 /* Settings stay within the viewport and keep related controls together. */
 .settings-panel { overflow-y: auto; align-items: start; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
 .settings-card { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; width: min(100%, 760px); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; }
+.notifications-card { grid-template-columns: minmax(0, 1fr); width: min(100%, 480px); }
 .settings-heading, .settings-group[aria-labelledby="changeLocationHeading"], .settings-sources { grid-column: 1 / -1; }
 .settings-heading { position: sticky; top: -16px; z-index: 2; margin: -16px -16px 0; padding: 14px 16px 10px; background: var(--card); }
 .settings-group { min-width: 0; padding: 11px 0; }

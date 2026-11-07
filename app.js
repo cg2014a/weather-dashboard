@@ -3555,7 +3555,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "notificationsToggle", "notificationSettingsHeading", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "notificationsToggle", "notificationSettingsHeading", "notificationsPanel", "notificationsClose", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "currentOutlook", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
@@ -4633,9 +4633,9 @@ function syncHourlyMetricControls() {
 
 function toggleSettings(force) {
   const shouldOpen = typeof force === "boolean" ? force : elements.settingsPanel.hidden;
+  if (shouldOpen) toggleNotifications(false);
   elements.settingsPanel.hidden = !shouldOpen;
   elements.settingsToggle.setAttribute("aria-expanded", String(shouldOpen));
-  elements.notificationsToggle.setAttribute("aria-expanded", String(shouldOpen));
   if (shouldOpen) {
     if (elements.autoLocationToggle) elements.autoLocationToggle.checked = autoLocationEnabled;
     if (elements.dailyLayoutToggle) elements.dailyLayoutToggle.checked = usesHorizontalDailyLayout();
@@ -4644,6 +4644,17 @@ function toggleSettings(force) {
     refreshMorningNotificationState();
     elements.locationInput.value = currentLocation.query || currentLocation.label;
     elements.locationStatus.textContent = "";
+  }
+}
+
+function toggleNotifications(force) {
+  const shouldOpen = typeof force === "boolean" ? force : elements.notificationsPanel.hidden;
+  if (shouldOpen) toggleSettings(false);
+  elements.notificationsPanel.hidden = !shouldOpen;
+  elements.notificationsToggle.setAttribute("aria-expanded", String(shouldOpen));
+  if (shouldOpen) {
+    refreshMorningNotificationState();
+    elements.notificationSettingsHeading.focus();
   }
 }
 
@@ -4708,9 +4719,10 @@ function bindInteractions() {
   });
   elements.alertCard.addEventListener("click", () => togglePanel(elements.alertCard, elements.alertDetails));
   elements.settingsToggle.addEventListener("click", () => toggleSettings());
-  elements.notificationsToggle.addEventListener("click", () => {
-    toggleSettings(true);
-    elements.notificationSettingsHeading.focus();
+  elements.notificationsToggle.addEventListener("click", () => toggleNotifications());
+  elements.notificationsClose.addEventListener("click", () => toggleNotifications(false));
+  elements.notificationsPanel.addEventListener("click", (event) => {
+    if (event.target === elements.notificationsPanel) toggleNotifications(false);
   });
   elements.settingsClose.addEventListener("click", () => toggleSettings(false));
   elements.settingsPanel.addEventListener("click", (event) => {
