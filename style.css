@@ -662,7 +662,11 @@ body.pollen-open { overflow: hidden; }
 :root.layout-modern .section-heading h2,
 :root.layout-modern .radar-preview-heading h2 { letter-spacing: -.02em; }
 :root.layout-modern .seven-day .daily-heading { display: flex; margin-bottom: 14px; }
-:root.layout-modern .current-outlook { margin: 0; padding: 18px; border: 1px solid var(--modern-border); border-radius: 22px; background: var(--modern-card); box-shadow: var(--shadow); }
+:root.layout-modern .current-card > .current-outlook { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; margin: 0; padding: 12px 24px 16px; border: 0; border-top: 1px solid var(--modern-border); border-radius: 0 0 21px 21px; background: var(--modern-card-strong); box-shadow: none; }
+:root.layout-modern .current-card > .current-outlook img { width: 22px; height: 22px; }
+:root.layout-modern .current-card > .current-outlook h2 { margin-bottom: 3px; font-size: .82rem; }
+:root.layout-modern .current-card > .current-outlook p { font-size: .8rem; line-height: 1.35; }
+:root.layout-modern .current-card[aria-expanded="true"] > .current-outlook { border-radius: 0; }
 :root.layout-modern .daily-list:not(.is-horizontal) { display: grid; gap: 0; overflow: visible; padding: 0; }
 :root.layout-modern .daily-list:not(.is-horizontal) .daily-day-card { border-top: 1px solid var(--modern-border); border-radius: 0; background: transparent; overflow: visible; }
 :root.layout-modern .daily-list:not(.is-horizontal) .daily-day-card:first-child { border-top: 0; }
@@ -765,6 +769,7 @@ body.pollen-open { overflow: hidden; }
   :root.layout-modern .modern-precip-chips { gap: 6px; }
   :root.layout-modern .modern-precip-chip { padding: 8px 6px; }
   :root.layout-modern .modern-precip-chip strong { font-size: .75rem; }
+  :root.layout-modern .current-card > .current-outlook { padding: 10px 14px 14px; border-radius: 0 0 19px 19px; }
 }
 @media (max-width: 380px) {
   :root.layout-modern .current-content { grid-template-columns: minmax(0, 1fr); }
