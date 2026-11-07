@@ -1,3 +1,5 @@
+import { estimateRadarNowcast } from "./nowcast.js";
+
 const IEM_BASE_URL = "https://mesonet.agron.iastate.edu/data/gis/images/4326/USCOMP";
 const IEM_METADATA_URL = `${IEM_BASE_URL}/n0q_0.json`;
 const IEM_PNG_URL = `${IEM_BASE_URL}/n0q_0.png`;
@@ -8,6 +10,7 @@ const ALLOWED_ORIGINS = new Set([
 const MAX_RADAR_AGE_MS = 15 * 60 * 1000;
 const MAX_FUTURE_SKEW_MS = 2 * 60 * 1000;
 const POINT_CACHE_SECONDS = 60;
+const WINDOW_RADIUS_PIXELS = 160;
 const IEM_WORLD = {
   pixelWidth: 0.005,
   pixelHeight: -0.005,
@@ -15,8 +18,8 @@ const IEM_WORLD = {
   originY: 50
 };
 
-let decodedRasterCache = null;
-let decodedRasterPromise = null;
+const radarWindowCache = new Map();
+const radarWindowPromises = new Map();
 
 function corsHeaders(origin) {
   return {
@@ -47,7 +50,7 @@ function pngChunkType(bytes, offset) {
   return String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
 }
 
-async function decodeIndexedPng(bytes) {
+async function decodeIndexedPngWindow(bytes, lat, lon) {
   const signature = [137, 80, 78, 71, 13, 10, 26, 10];
   if (signature.some((value, index) => bytes[index] !== value)) throw new Error("IEM PNG signature is invalid.");
 
@@ -90,11 +93,37 @@ async function decodeIndexedPng(bytes) {
     compressedOffset += part.length;
   }
 
-  const inflated = new Uint8Array(await new Response(
-    new Blob([compressed]).stream().pipeThrough(new DecompressionStream("deflate"))
-  ).arrayBuffer());
+  const center = pixelForCoordinate(lat, lon, IEM_WORLD, width, height);
+  const x0 = Math.max(0, center.x - WINDOW_RADIUS_PIXELS);
+  const y0 = Math.max(0, center.y - WINDOW_RADIUS_PIXELS);
+  const x1 = Math.min(width, center.x + WINDOW_RADIUS_PIXELS + 1);
+  const y1 = Math.min(height, center.y + WINDOW_RADIUS_PIXELS + 1);
+  const windowWidth = x1 - x0;
+  const windowHeight = y1 - y0;
+  const pixels = new Uint8Array(windowWidth * windowHeight);
   const stride = width + 1;
-  if (inflated.length !== stride * height) throw new Error("IEM PNG raster size is invalid.");
+  const reader = new Blob([compressed]).stream().pipeThrough(new DecompressionStream("deflate")).getReader();
+  let chunk = new Uint8Array(0);
+  let chunkOffset = 0;
+  let inflatedLength = 0;
+  const rows = [new Uint8Array(stride), new Uint8Array(stride)];
+
+  async function readRow(row) {
+    let filled = 0;
+    while (filled < stride) {
+      if (chunkOffset >= chunk.length) {
+        const next = await reader.read();
+        if (next.done) throw new Error("IEM PNG raster size is invalid.");
+        chunk = next.value;
+        chunkOffset = 0;
+      }
+      const count = Math.min(stride - filled, chunk.length - chunkOffset);
+      row.set(chunk.subarray(chunkOffset, chunkOffset + count), filled);
+      chunkOffset += count;
+      filled += count;
+      inflatedLength += count;
+    }
+  }
 
   const paeth = (a, b, c) => {
     const estimate = a + b - c;
@@ -104,24 +133,30 @@ async function decodeIndexedPng(bytes) {
     return distanceA <= distanceB && distanceA <= distanceC ? a : distanceB <= distanceC ? b : c;
   };
   for (let y = 0; y < height; y += 1) {
-    const sourceStart = y * stride + 1;
-    const targetStart = y * width;
-    const filter = inflated[sourceStart - 1];
+    const row = rows[y % 2];
+    await readRow(row);
+    const current = row.subarray(1);
+    const previous = y ? rows[(y + 1) % 2].subarray(1) : null;
+    const filter = row[0];
     for (let x = 0; x < width; x += 1) {
-      const left = x ? inflated[targetStart + x - 1] : 0;
-      const above = y ? inflated[(y - 1) * width + x] : 0;
-      const upperLeft = y && x ? inflated[(y - 1) * width + x - 1] : 0;
-      const value = inflated[sourceStart + x];
-      if (filter === 0) inflated[targetStart + x] = value;
-      else if (filter === 1) inflated[targetStart + x] = (value + left) & 255;
-      else if (filter === 2) inflated[targetStart + x] = (value + above) & 255;
-      else if (filter === 3) inflated[targetStart + x] = (value + Math.floor((left + above) / 2)) & 255;
-      else if (filter === 4) inflated[targetStart + x] = (value + paeth(left, above, upperLeft)) & 255;
-      else throw new Error("IEM PNG filter is unsupported.");
+      const left = x ? current[x - 1] : 0;
+      const above = previous ? previous[x] : 0;
+      const upperLeft = previous && x ? previous[x - 1] : 0;
+      const value = current[x];
+      if (filter === 1) current[x] = (value + left) & 255;
+      else if (filter === 2) current[x] = (value + above) & 255;
+      else if (filter === 3) current[x] = (value + Math.floor((left + above) / 2)) & 255;
+      else if (filter === 4) current[x] = (value + paeth(left, above, upperLeft)) & 255;
+      else if (filter !== 0) throw new Error("IEM PNG filter is unsupported.");
     }
+    if (y >= y0 && y < y1) pixels.set(current.subarray(x0, x1), (y - y0) * windowWidth);
   }
-
-  return { width, height, pixels: inflated.subarray(0, width * height) };
+  if (inflatedLength !== stride * height || chunkOffset < chunk.length) throw new Error("IEM PNG raster size is invalid.");
+  for (let tail = await reader.read(); !tail.done; tail = await reader.read()) {
+    if (tail.value.length) throw new Error("IEM PNG raster size is invalid.");
+  }
+  return { width: windowWidth, height: windowHeight, x0, y0,
+    centerX: center.x - x0, centerY: center.y - y0, pixels };
 }
 
 function pixelForCoordinate(lat, lon, world, width, height) {
@@ -135,6 +170,35 @@ function pixelForCoordinate(lat, lon, world, width, height) {
 
 export function indexToDbz(index) {
   return index > 0 ? -32 + (index - 1) * 0.5 : null;
+}
+
+async function loadRadarWindow(url, validAt, lat, lon, fetcher) {
+  const key = `${validAt}:${lat.toFixed(4)}:${lon.toFixed(4)}`;
+  const useCache = fetcher === fetch;
+  if (useCache && radarWindowCache.has(key)) return radarWindowCache.get(key);
+  if (useCache && radarWindowPromises.has(key)) return radarWindowPromises.get(key);
+  const pending = (async () => {
+    const response = await fetcher(url, { cf: { cacheEverything: true, cacheTtl: POINT_CACHE_SECONDS } });
+    if (!response.ok) throw new Error("IEM PNG raster is unavailable.");
+    return { validAt, ...(await decodeIndexedPngWindow(new Uint8Array(await response.arrayBuffer()), lat, lon)) };
+  })();
+  if (useCache) radarWindowPromises.set(key, pending);
+  try {
+    const window = await pending;
+    if (useCache) {
+      radarWindowCache.set(key, window);
+      if (radarWindowCache.size > 12) radarWindowCache.delete(radarWindowCache.keys().next().value);
+    }
+    return window;
+  } finally {
+    if (useCache) radarWindowPromises.delete(key);
+  }
+}
+
+function archivedN0qUrl(timestamp) {
+  const date = new Date(timestamp);
+  const stamp = date.toISOString().slice(0, 16).replace(/[-:T]/g, "");
+  return `https://mesonet.agron.iastate.edu/archive/data/${stamp.slice(0, 4)}/${stamp.slice(4, 6)}/${stamp.slice(6, 8)}/GIS/uscomp/n0q_${stamp}.png`;
 }
 
 export async function sampleIemN0q(lat, lon, { fetcher = fetch, now = Date.now() } = {}) {
@@ -152,31 +216,27 @@ export async function sampleIemN0q(lat, lon, { fetcher = fetch, now = Date.now()
     throw new Error("IEM radar data is stale.");
   }
 
-  if (!decodedRasterCache || decodedRasterCache.validAt !== validAt) {
-    if (!decodedRasterPromise) {
-      decodedRasterPromise = (async () => {
-        const rasterResponse = await fetcher(IEM_PNG_URL, {
-          cf: { cacheEverything: true, cacheTtl: POINT_CACHE_SECONDS }
-        });
-        if (!rasterResponse.ok) throw new Error("IEM PNG raster is unavailable.");
-        return decodeIndexedPng(new Uint8Array(await rasterResponse.arrayBuffer()));
-      })().finally(() => {
-        decodedRasterPromise = null;
-      });
+  const current = await loadRadarWindow(IEM_PNG_URL, validAt, lat, lon, fetcher);
+  const index = current.pixels[current.centerY * current.width + current.centerX];
+  let nowcast = null;
+  for (const minutesBetween of [10, 5]) {
+    const previousTime = validAtMs - minutesBetween * 60 * 1000;
+    try {
+      const previous = await loadRadarWindow(archivedN0qUrl(previousTime), new Date(previousTime).toISOString(), lat, lon, fetcher);
+      nowcast = estimateRadarNowcast(previous, current, minutesBetween, lat);
+      break;
+    } catch (error) {
+      console.warn("IEM archived radar frame unavailable.", { minutesBetween, message: error instanceof Error ? error.message : String(error) });
     }
-    decodedRasterCache = { validAt, ...(await decodedRasterPromise) };
   }
-
-  const { width, height, pixels } = decodedRasterCache;
-  const { x, y } = pixelForCoordinate(lat, lon, IEM_WORLD, width, height);
-  const index = pixels[y * width + x];
 
   return {
     ok: true,
     source: "iem-n0q",
     validAt,
     dbz: indexToDbz(index),
-    index
+    index,
+    nowcast
   };
 }
 

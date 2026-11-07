@@ -449,7 +449,7 @@ class WeatherService {
     const [airQualityResult, atmosporePollenResult, iemRadarResult] = await Promise.allSettled([
       this.withTimeout(this.getAirQuality(location), 5000, "air quality"),
       this.getAtmosporePollen(location, { startDate, forecastDays: 7 }),
-      this.withTimeout(this.getIemRadar(location), 5000, "IEM radar")
+      this.withTimeout(this.getIemRadar(location), 15000, "IEM radar")
     ]);
     const airQuality = this.settledValue(airQualityResult);
     const providerPollen = this.settledValue(atmosporePollenResult);
@@ -491,7 +491,7 @@ class WeatherService {
     const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
     if (!this.pendingIemRadarPayloads.has(key)) {
       const url = `${RADAR_WORKER_URL}?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-      const request = this.fetchJson(url, { timeoutMs: 5000 })
+      const request = this.fetchJson(url, { timeoutMs: 15000 })
         .then((payload) => this.normalizeIemRadar(payload))
         .catch((error) => {
           console.warn("IEM radar unavailable.", error);
@@ -510,7 +510,11 @@ class WeatherService {
     const validAtMs = validAt ? new Date(validAt).getTime() : NaN;
     const ageMs = Date.now() - validAtMs;
     if (!payload?.ok || (!hasNoEcho && dbz === null) || !Number.isFinite(validAtMs) || ageMs < -2 * 60 * 1000 || ageMs > 15 * 60 * 1000) return null;
-    return { source: "iem-n0q", dbz, validAt };
+    const kind = payload.nowcast?.kind;
+    const minutes = Number(payload.nowcast?.minutes);
+    const nowcast = ["arrival", "clearing"].includes(kind) && Number.isInteger(minutes) && minutes >= 5 && minutes <= 45
+      && payload.nowcast.validAt === validAt ? { kind, minutes, validAt } : null;
+    return { source: "iem-n0q", dbz, validAt, nowcast };
   }
 
   async getOpenMeteoAirQualityPayload(location) {
@@ -1679,6 +1683,8 @@ class WeatherService {
     const observedCondition = this.visibleObservedConditionText(observation);
     const stationObserved = this.isCurrentPrecipObservationFresh(observation)
       && this.isCurrentPrecipCondition(observedCondition);
+    const radarNowcast = currentEvidence.radar?.nowcast || null;
+    const radarArrival = radarNowcast?.kind === "arrival";
     const currentConditionPrecip = stationObserved || localObserved;
     let type = this.shortTermPrecipType(shortTerm, currentPeriod, hourlyPeriods, supplemental);
     const expectedAmount = this.expectedPrecipAmount(hourlyPeriods, supplemental);
@@ -1699,15 +1705,16 @@ class WeatherService {
     const modelCurrentSignal = !stationObserved && !localObserved
       && ((modelCurrentAmount >= 0.01 && currentChance >= 50)
         || (modelCurrentAmount >= 0.05 && currentChance >= 30));
-    const active = currentConditionPrecip || nearbyObserved || modelCurrentSignal || Boolean(minuteSignal || nwsSignal);
+    const active = currentConditionPrecip || nearbyObserved || modelCurrentSignal || Boolean(minuteSignal || nwsSignal || radarArrival);
     const signal = localObserved ? "radar" : stationObserved ? "station" : nearbyObserved ? "nearby-station" : modelCurrentSignal ? "model-current"
-      : minuteSignal ? "minute-forecast" : "nws-forecast";
+      : minuteSignal ? "minute-forecast" : nwsSignal ? "nws-forecast" : radarArrival ? "radar-forecast" : "nws-forecast";
     if (localObserved && !stationObserved) type = "Precipitation";
     else if (stationObserved) type = this.precipType(observedCondition);
     else if (nearbyObserved) type = this.precipType(observation?.properties?.nearbyPrecipitationText
       || observation?.properties?.localPrecipitationText || "");
     else if (nwsSignal) type = this.precipType(nwsSignal.shortForecast);
     else if (minuteSignal?.type) type = minuteSignal.type;
+    if (signal === "radar-forecast") type = "Precipitation";
     const forecastDuration = minuteSignal
       ? this.forecastPrecipDurationEstimate(forecastIntervals, minuteSignal)
       : null;
@@ -1717,10 +1724,11 @@ class WeatherService {
     let timing = "Next hour";
     if (localObserved || stationObserved) timing = "Now";
     else if (nearbyObserved) timing = "Nearby now";
-    else if (modelCurrentSignal) timing = "Around now";
+    else if (modelCurrentSignal) timing = "Soon";
     else if (minuteSignal) timing = minuteSignal.minutesFromNow <= 15
       ? "Within 15 min" : `About ${Math.ceil(minuteSignal.minutesFromNow / 15) * 15} min`;
     else if (nwsSignal === hourlyPeriods?.[0]) timing = "This hour";
+    else if (radarArrival) timing = `About ${radarNowcast.minutes} min`;
     const forecastAmount = minuteSignal?.amount ?? (modelCurrentSignal ? modelCurrentAmount : null);
     const intensityText = stationObserved ? observedCondition
       : nearbyObserved ? observation?.properties?.nearbyPrecipitationText || observation?.properties?.localPrecipitationText || ""
@@ -1741,8 +1749,9 @@ class WeatherService {
     if (signal === "radar") summary = "Radar detects precipitation over your area.";
     else if (signal === "station") summary = `Nearby station reports ${observedCondition.toLowerCase()} now.`;
     else if (signal === "nearby-station") summary = `${type} reported by a nearby station.`;
-    else if (signal === "model-current") summary = `${type} forecast around now at your location.`;
+    else if (signal === "model-current") summary = `${type} forecast soon at your location.`;
     else if (signal === "minute-forecast") summary = `${type} possible ${this.precipArrivalLabel(minuteSignal.minutesFromNow)} (15-minute forecast).`;
+    else if (signal === "radar-forecast") summary = `Radar motion suggests precipitation may reach your area in about ${radarNowcast.minutes} minutes.`;
     else if (this.isCurrentPrecipCondition(nwsSignal?.shortForecast)) {
       summary = `NWS forecasts ${nwsSignal.shortForecast.toLowerCase()} ${nwsSignal === hourlyPeriods?.[0] ? "this hour" : "next hour"}.`;
     } else summary = `${type} possible ${nwsSignal === hourlyPeriods?.[0] ? "this hour" : "next hour"} (NWS forecast).`;
@@ -1751,7 +1760,7 @@ class WeatherService {
       type,
       icon: type === "Snow" || type === "Sleet" ? "weather-snow.svg" : "weather-rain.svg",
       summary: active ? summary : "No significant precipitation expected.",
-      current: localObserved ? "Radar precipitation nearby" : nearbyObserved ? `${type} reported nearby` : forecastCurrent ? `${type} forecast around now` : `${currentChance}% forecast chance`,
+      current: localObserved ? "Radar precipitation nearby" : nearbyObserved ? `${type} reported nearby` : forecastCurrent ? `${type} forecast soon` : `${currentChance}% forecast chance`,
       nextHour: `${shortTerm.peakChance}% next hour`,
       amount: this.precipAmountLabel(expectedAmount, hourlyPeriods, supplemental),
       today: expectedAmount >= 0.001 ? `${this.formatInches(expectedAmount)} today` : "",
@@ -1765,6 +1774,7 @@ class WeatherService {
       currentCondition,
       currentConditionShowsPrecip: currentConditionPrecip,
       signal,
+      radarNowcast,
       timing,
       intensity,
       duration,
@@ -2319,7 +2329,7 @@ class WeatherService {
     const validAt = new Date(radar?.validAt || "").getTime();
     const ageMs = Date.now() - validAt;
     if ((!hasNoEcho && dbz === null) || !Number.isFinite(validAt) || ageMs < -2 * 60 * 1000 || ageMs > 15 * 60 * 1000) return null;
-    return { dbz, validAt: radar.validAt };
+    return { dbz, validAt: radar.validAt, nowcast: radar.nowcast || null };
   }
 
   currentLocalPrecipAmount(supplemental = {}) {
@@ -2499,7 +2509,7 @@ class WeatherService {
   precipitationChartMessage({ localObserved, nearbyObserved, forecastCurrent, shortTerm, type }) {
     if (localObserved) return "Radar suggests precipitation nearby";
     if (nearbyObserved) return `${type} reported by a nearby station`;
-    if (forecastCurrent) return `${type} forecast around now`;
+    if (forecastCurrent) return `${type} forecast soon`;
     if (shortTerm.source === "minutely" && shortTerm.arrivalMinutes !== null) {
       const arrival = this.precipArrivalLabel(shortTerm.arrivalMinutes);
       return `${type} ${shortTerm.futureHasAmounts ? "forecast" : "possible"} ${arrival}`;
@@ -3547,7 +3557,7 @@ function cacheElements() {
   [
     "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
-    "condition", "currentOutlook", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "precipAmounts", "alertCard",
+    "condition", "currentOutlook", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
     "expandedWeather", "currentNarrative", "radarPreviewCard", "radarPreviewFrame", "radarFrame", "radarPreviewLabel", "radarPanelLabel", "radarToggle", "radarPanel", "radarClose", "radarTime",
     "pollenPanel", "pollenClose", "pollenList", "pollenSummary"
@@ -3873,51 +3883,63 @@ function renderPrecipitation(precipitation) {
 
   elements.precipCard.hidden = false;
   setIcon(elements.precipIcon, precipitation.icon, "");
-  setText("precipSummary", precipitation.summary);
-  elements.precipSummary.hidden = !precipitation.summary;
-  elements.precipAmounts.replaceChildren();
-  elements.precipAmounts.appendChild(renderModernPrecipitationChips(precipitation));
+  setText("precipSummary", precipitationNarrative(precipitation));
 }
 
-function renderModernPrecipitationChips(precipitation) {
-  const chips = document.createElement("div");
-  chips.className = "modern-precip-chips";
-
-  const addChip = (label, value) => {
-    const chip = document.createElement("div");
-    chip.className = "modern-precip-chip";
-    const chipLabel = document.createElement("span");
-    const chipValue = document.createElement("strong");
-    chipLabel.textContent = label;
-    chipValue.textContent = value;
-    chip.append(chipLabel, chipValue);
-    chips.appendChild(chip);
-  };
-
-  const precipitationDescriptor = modernPrecipitationDescriptor(precipitation);
-  addChip("Timing", modernPrecipitationTiming(precipitation));
-  addChip(precipitationDescriptor.label, precipitationDescriptor.value);
-  if (precipitation.duration) addChip("Duration", precipitation.duration);
-  else chips.classList.add("without-duration");
-  return chips;
+function precipitationDurationText(duration, ongoing) {
+  const match = String(duration || "").match(/^~?(\d+)(\+)? min(?: left)?$/);
+  if (!match) return "";
+  const minutes = Number(match[1]);
+  const qualifier = match[2] ? "at least" : "about";
+  if (minutes === 60) return `${qualifier} ${ongoing ? "another" : "an"} hour`;
+  return `${qualifier} ${minutes}${ongoing ? " more" : ""} minutes`;
 }
 
-function modernPrecipitationTiming(precipitation) {
-  if (precipitation.timing) return precipitation.timing;
-  if (precipitation.currentConditionShowsPrecip) return "Now";
-  if (precipitation.currentObserved) return "Recent radar";
-  if (precipitation.nearbyObserved) return "Recent report";
-  if (precipitation.forecastCurrent) return "This hour";
-  const minutes = precipitation.arrivalMinutes == null ? null : Number(precipitation.arrivalMinutes);
-  if (minutes === null || !Number.isFinite(minutes)) return "Forecast hour";
-  if (minutes <= 15) return "Within 15 min";
-  return `About ${Math.round(minutes / 15) * 15} min`;
-}
+function precipitationNarrative(precipitation) {
+  const signal = precipitation.signal;
+  const type = String(precipitation.type || "precipitation").toLowerCase();
+  const intensity = /^(light|moderate|heavy)(?: forecast)?$/i.exec(precipitation.intensity || "")?.[1]?.toLowerCase();
+  const weather = `${intensity ? `${intensity} ` : ""}${type}`;
+  const subject = weather[0].toUpperCase() + weather.slice(1);
+  const ongoing = ["radar", "station", "nearby-station"].includes(signal);
+  const duration = precipitationDurationText(precipitation.duration, ongoing);
+  const radarNowcast = precipitation.radarNowcast;
+  const radarSentence = radarNowcast?.kind === "arrival" && !ongoing
+    ? `Recent radar scans suggest precipitation could reach you in about ${radarNowcast.minutes} minutes.`
+    : radarNowcast?.kind === "clearing" && ongoing
+      ? `Recent radar scans suggest this band may move away in about ${radarNowcast.minutes} minutes.`
+      : "";
+  const withRadar = (sentence) => radarSentence ? `${sentence} ${radarSentence}` : sentence;
 
-function modernPrecipitationDescriptor(precipitation) {
-  const type = precipitation.type || "Precipitation";
-  if (precipitation.intensity) return { label: "Intensity", value: precipitation.intensity };
-  return { label: "Type", value: type === "Sleet" ? "Mixed" : type };
+  if (signal === "radar") {
+    const radarStrength = /^(light|moderate|strong) radar$/i.exec(precipitation.intensity || "")?.[1]?.toLowerCase();
+    const echoes = radarStrength ? `, with ${radarStrength} echoes` : "";
+    const continuation = duration ? `; forecasts suggest it may continue for ${duration}` : "";
+    return withRadar(`Radar shows precipitation near you now${echoes}${continuation}.`);
+  }
+  if (signal === "station" || signal === "nearby-station") {
+    const familiarWeather = (type === "rain" || type === "snow") && (intensity === "light" || intensity === "heavy");
+    const observed = familiarWeather
+      ? `It's ${type === "rain" ? "raining" : "snowing"} ${intensity === "light" ? "lightly" : "heavily"} nearby right now`
+      : `${subject} is being reported nearby right now`;
+    return withRadar(`${observed}${duration ? ` and may ${familiarWeather ? "keep up" : "continue"} for ${duration}` : ""}.`);
+  }
+  if (signal === "model-current") {
+    return withRadar(`${subject} may start soon${duration ? ` and could last ${duration}` : ""}.`);
+  }
+  if (signal === "minute-forecast") {
+    const timing = precipitation.timing === "Within 15 min" ? "within 15 minutes"
+      : /^About (\d+) min$/.exec(precipitation.timing || "")?.[1];
+    const arrival = timing && /^\d+$/.test(timing) ? `in about ${timing} minutes` : timing || "soon";
+    return withRadar(`${subject} may start ${arrival}${duration ? ` and could last ${duration}` : ""}.`);
+  }
+  if (signal === "nws-forecast") {
+    const timing = precipitation.timing === "This hour" ? "this hour" : "next hour";
+    const forecast = precipitation.summary?.startsWith("NWS forecasts") ? `is forecast ${timing}` : `is possible ${timing}`;
+    return withRadar(`${subject} ${forecast}${duration ? ` and could last ${duration}` : ""}.`);
+  }
+  if (signal === "radar-forecast") return radarSentence;
+  return withRadar(precipitation.summary || "Precipitation conditions are updating.");
 }
 
 function modernPrecipitationDuration(precipitation) {

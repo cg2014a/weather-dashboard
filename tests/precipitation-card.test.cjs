@@ -32,7 +32,7 @@ function loadApp() {
   return { ...context.testApi, document };
 }
 
-function weatherInputs({ condition = "Partly Cloudy", chance = 10, amounts = [0, 0, 0, 0], chances = [8, 11, 14, 17], radar = null, station = null, stationAgeMinutes = 0, currentAmount = 0 } = {}) {
+function weatherInputs({ condition = "Partly Cloudy", chance = 10, amounts = [0, 0, 0, 0], chances = [8, 11, 14, 17], radar = null, radarNowcast = null, station = null, stationAgeMinutes = 0, currentAmount = 0 } = {}) {
   const now = Date.now();
   const period = {
     shortForecast: condition,
@@ -51,7 +51,7 @@ function weatherInputs({ condition = "Partly Cloudy", chance = 10, amounts = [0,
     minutelyPrecipChances: chances,
     minutelyPrecipAmounts: amounts,
     precipitationAmount: currentAmount,
-    iemRadar: radar === null ? null : { dbz: radar, validAt: new Date(now).toISOString() }
+    iemRadar: radar === null ? null : { dbz: radar, validAt: new Date(now).toISOString(), nowcast: radarNowcast }
   };
   const observation = station === null ? null : {
     properties: { textDescription: station, timestamp: new Date(now - stationAgeMinutes * 60000).toISOString() }
@@ -96,7 +96,7 @@ test("strong current model rain stays labelled forecast when radar has no echo",
   assert.equal(precipitation.active, true);
   assert.equal(precipitation.signal, "model-current");
   assert.equal(precipitation.intensity, "Heavy forecast");
-  assert.match(precipitation.summary, /forecast around now/);
+  assert.match(precipitation.summary, /forecast soon/);
 });
 
 test("stale rain report does not claim current rain", () => {
@@ -157,7 +157,7 @@ test("definite NWS rain forecast agrees in wording with a Light Rain current car
   assert.equal(precipitation.duration, "~60 min left");
 });
 
-test("rendering shows Duration only when a time is supported, with no forecast chart", () => {
+test("rendering combines observed rain, intensity, and supported duration in one sentence", () => {
   const { WeatherService, renderPrecipitation, elements } = loadApp();
   const service = new WeatherService();
   const precipitation = card(service, {
@@ -166,16 +166,78 @@ test("rendering shows Duration only when a time is supported, with no forecast c
   elements.precipCard = { hidden: true };
   elements.precipIcon = {};
   elements.precipSummary = {};
-  elements.precipAmounts = { children: [], replaceChildren(...children) { this.children = children; }, appendChild(child) { this.children.push(child); } };
   renderPrecipitation(precipitation);
   assert.equal(elements.precipCard.hidden, false);
-  assert.equal(elements.precipAmounts.children.length, 1);
-  const chips = elements.precipAmounts.children[0].children;
-  assert.deepEqual(chips.map((chip) => chip.children[0].textContent), ["Timing", "Intensity", "Duration"]);
+  assert.equal(elements.precipSummary.textContent,
+    "It's raining lightly nearby right now and may keep up for about 30 more minutes.");
 
   renderPrecipitation(card(service, { station: "Light Rain" }));
-  assert.equal(elements.precipAmounts.children.length, 1);
-  const shorterChips = elements.precipAmounts.children[0];
-  assert.deepEqual(shorterChips.children.map((chip) => chip.children[0].textContent), ["Timing", "Intensity"]);
-  assert.equal(shorterChips.classList.contains("without-duration"), true);
+  assert.equal(elements.precipSummary.textContent, "It's raining lightly nearby right now.");
+});
+
+test("forecast wording stays tentative and uses the available timing", () => {
+  const { WeatherService, renderPrecipitation, elements } = loadApp();
+  const service = new WeatherService();
+  elements.precipCard = { hidden: true };
+  elements.precipIcon = {};
+  elements.precipSummary = {};
+
+  renderPrecipitation(card(service, {
+    station: "Partly Cloudy", chances: [70, 70, 10, 10], amounts: [0.08, 0.08, 0, 0]
+  }));
+  assert.equal(elements.precipSummary.textContent,
+    "Heavy precipitation may start within 15 minutes and could last about 30 minutes.");
+
+  renderPrecipitation(card(service, { condition: "Light Rain", chance: 70 }));
+  assert.equal(elements.precipSummary.textContent,
+    "Light rain is forecast this hour and could last about an hour.");
+});
+
+test("radar wording describes current echoes without claiming a radar forecast", () => {
+  const { WeatherService, renderPrecipitation, elements } = loadApp();
+  elements.precipCard = { hidden: true };
+  elements.precipIcon = {};
+  elements.precipSummary = {};
+  renderPrecipitation(card(new WeatherService(), { station: "Partly Cloudy", radar: 45 }));
+  assert.equal(elements.precipSummary.textContent,
+    "Radar shows precipitation near you now, with strong echoes.");
+});
+
+test("model-current wording says soon instead of around now", () => {
+  const { WeatherService, renderPrecipitation, elements } = loadApp();
+  elements.precipCard = { hidden: true };
+  elements.precipIcon = {};
+  elements.precipSummary = {};
+  renderPrecipitation(card(new WeatherService(), {
+    station: "Partly Cloudy", radar: 0, chance: 70, currentAmount: 0.08
+  }));
+  assert.equal(elements.precipSummary.textContent, "Heavy precipitation may start soon.");
+});
+
+test("radar arrival can open the card and adds a motion estimate", () => {
+  const { WeatherService, renderPrecipitation, elements } = loadApp();
+  const precipitation = card(new WeatherService(), {
+    station: "Partly Cloudy", radar: 0, radarNowcast: { kind: "arrival", minutes: 20 }
+  });
+  assert.equal(precipitation.active, true);
+  assert.equal(precipitation.signal, "radar-forecast");
+  elements.precipCard = { hidden: true };
+  elements.precipIcon = {};
+  elements.precipSummary = {};
+  renderPrecipitation(precipitation);
+  assert.equal(elements.precipSummary.textContent,
+    "Recent radar scans suggest precipitation could reach you in about 20 minutes.");
+});
+
+test("radar clearing is an added estimate, not a claim that rain stops", () => {
+  const { WeatherService, renderPrecipitation, elements } = loadApp();
+  const precipitation = card(new WeatherService(), {
+    station: "Partly Cloudy", radar: 45, radarNowcast: { kind: "clearing", minutes: 25 }
+  });
+  elements.precipCard = { hidden: true };
+  elements.precipIcon = {};
+  elements.precipSummary = {};
+  renderPrecipitation(precipitation);
+  assert.match(elements.precipSummary.textContent,
+    /Recent radar scans suggest this band may move away in about 25 minutes\./);
 });
