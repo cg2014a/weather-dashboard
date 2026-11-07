@@ -12,18 +12,23 @@
     <link rel="manifest" href="manifest.json" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.svg" />
     <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="style.css?v2-60" />
-    <script src="version.js?v2-60"></script>
+    <link rel="stylesheet" href="style.css?v2-61" />
+    <script src="version.js?v2-61"></script>
   </head>
   <body>
     <div class="pull-refresh" id="pullRefresh" aria-hidden="true">Release to refresh</div>
     <main class="weather-page" aria-label="SkyStation weather dashboard">
       <section class="weather-shell">
         <p class="app-kicker">
-          SkyStation Weather <span>- <span id="locationLabel">Olathe, KS</span></span> <time id="appClock">--:--</time>
-          <button class="settings-button" id="settingsToggle" type="button" aria-label="Settings">
-            <img src="icons/nav-settings.svg" alt="" />
-          </button>
+          <span class="kicker-copy">SkyStation Weather <span>- <span id="locationLabel">Olathe, KS</span></span> <time id="appClock">--:--</time></span>
+          <span class="header-actions">
+            <button class="settings-button notification-button" id="notificationsToggle" type="button" aria-label="Notification settings" aria-controls="settingsPanel" aria-expanded="false">
+              <img src="icons/nav-notifications.svg" alt="" />
+            </button>
+            <button class="settings-button" id="settingsToggle" type="button" aria-label="Settings" aria-controls="settingsPanel" aria-expanded="false">
+              <img src="icons/nav-settings.svg" alt="" />
+            </button>
+          </span>
         </p>
         <section class="current-card" id="currentCard" aria-label="Current weather" role="button" tabindex="0" aria-expanded="false" aria-controls="expandedWeather">
           <div class="current-content">
@@ -187,7 +192,7 @@
           </label>
         </section>
         <section class="settings-group" aria-labelledby="notificationSettingsHeading">
-          <h3 id="notificationSettingsHeading">Notifications</h3>
+          <h3 id="notificationSettingsHeading" tabindex="-1">Notifications</h3>
           <label class="location-toggle">
             <span>
               <strong>Morning Forecast</strong>
@@ -221,8 +226,8 @@
         </section>
       </form>
     </section>
-    <script src="atmospore-client.js?v2-60"></script>
-    <script src="app.js?v2-60"></script>
+    <script src="atmospore-client.js?v2-61"></script>
+    <script src="app.js?v2-61"></script>
   </body>
 </html>
 

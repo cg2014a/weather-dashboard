@@ -3555,7 +3555,7 @@ function updateRadarLocation(location) {
 
 function cacheElements() {
   [
-    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
+    "pullRefresh", "locationLabel", "appClock", "settingsToggle", "notificationsToggle", "notificationSettingsHeading", "settingsPanel", "settingsClose", "locationForm", "locationInput", "useMyLocation", "locationStatus", "autoLocationToggle", "dailyLayoutToggle", "themeLight", "themeDark", "layoutClassic", "layoutModern", "morningNotificationToggle", "severeAlertsToggle", "notificationAdvanced", "notificationTestControl", "severeAlertTestControl", "sendTestNotification", "sendActiveNwsAlertTestNotification", "morningNotificationStatus",
     "currentCard", "currentTemp", "currentIcon", "allergenAlerts",
     "condition", "currentOutlook", "outlookIcon", "feelsLike", "currentStats", "detailsGrid", "precipCard", "precipIcon", "precipSummary", "alertCard",
     "alertHeadline", "alertBody", "alertDetails", "hourlyForecast", "hourlyPrecipToggle", "hourlyWindToggle", "dailyForecast",
@@ -4635,6 +4635,7 @@ function toggleSettings(force) {
   const shouldOpen = typeof force === "boolean" ? force : elements.settingsPanel.hidden;
   elements.settingsPanel.hidden = !shouldOpen;
   elements.settingsToggle.setAttribute("aria-expanded", String(shouldOpen));
+  elements.notificationsToggle.setAttribute("aria-expanded", String(shouldOpen));
   if (shouldOpen) {
     if (elements.autoLocationToggle) elements.autoLocationToggle.checked = autoLocationEnabled;
     if (elements.dailyLayoutToggle) elements.dailyLayoutToggle.checked = usesHorizontalDailyLayout();
@@ -4707,6 +4708,10 @@ function bindInteractions() {
   });
   elements.alertCard.addEventListener("click", () => togglePanel(elements.alertCard, elements.alertDetails));
   elements.settingsToggle.addEventListener("click", () => toggleSettings());
+  elements.notificationsToggle.addEventListener("click", () => {
+    toggleSettings(true);
+    elements.notificationSettingsHeading.focus();
+  });
   elements.settingsClose.addEventListener("click", () => toggleSettings(false));
   elements.settingsPanel.addEventListener("click", (event) => {
     if (event.target === elements.settingsPanel) toggleSettings(false);

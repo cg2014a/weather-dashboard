@@ -34,6 +34,7 @@ const APP_SHELL = [
   "./icons/moon.svg",
   "./icons/alert.svg",
   "./icons/nav-settings.svg",
+  "./icons/nav-notifications.svg",
   "./icons/nav-weather.svg",
   "./icons/nav-radar.svg",
   "./icons/nav-news.svg"
